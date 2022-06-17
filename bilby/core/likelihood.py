@@ -4,7 +4,7 @@ import numpy as np
 from scipy.special import gammaln, xlogy
 from scipy.stats import multivariate_normal
 
-from .utils import infer_parameters_from_function
+from .utils import infer_parameters_from_function, infer_args_from_function_except_n_args
 
 
 class Likelihood(object):
@@ -108,13 +108,14 @@ class Analytical1DLikelihood(Likelihood):
         value is given).
     """
 
-    def __init__(self, x, y, func):
+    def __init__(self, x, y, func, **kwargs):
         parameters = infer_parameters_from_function(func)
-        super(Analytical1DLikelihood, self).__init__(dict.fromkeys(parameters))
+        super(Analytical1DLikelihood, self).__init__(dict())
         self.x = x
         self.y = y
         self._func = func
-        self._function_keys = list(self.parameters.keys())
+        self._function_keys = [key for key in parameters if key not in kwargs]
+        self.kwargs = kwargs
 
     def __repr__(self):
         return self.__class__.__name__ + '(x={}, y={}, func={})'.format(self.x, self.y, self.func.__name__)
@@ -164,11 +165,11 @@ class Analytical1DLikelihood(Likelihood):
     @property
     def residual(self):
         """ Residual of the function against the data. """
-        return self.y - self.func(self.x, **self.model_parameters)
+        return self.y - self.func(self.x, **self.model_parameters, **self.kwargs)
 
 
 class GaussianLikelihood(Analytical1DLikelihood):
-    def __init__(self, x, y, func, sigma=None):
+    def __init__(self, x, y, func, sigma=None, **kwargs):
         """
         A general Gaussian likelihood for known or unknown noise - the model
         parameters are inferred from the arguments of function
@@ -190,7 +191,7 @@ class GaussianLikelihood(Analytical1DLikelihood):
             to that for `x` and `y`.
         """
 
-        super(GaussianLikelihood, self).__init__(x=x, y=y, func=func)
+        super(GaussianLikelihood, self).__init__(x=x, y=y, func=func, **kwargs)
         self.sigma = sigma
 
         # Check if sigma was provided, if not it is a parameter
@@ -229,7 +230,7 @@ class GaussianLikelihood(Analytical1DLikelihood):
 
 
 class PoissonLikelihood(Analytical1DLikelihood):
-    def __init__(self, x, y, func):
+    def __init__(self, x, y, func, **kwargs):
         """
         A general Poisson likelihood for a rate - the model parameters are
         inferred from the arguments of function, which provides a rate.
@@ -251,10 +252,10 @@ class PoissonLikelihood(Analytical1DLikelihood):
             fixed value is given).
         """
 
-        super(PoissonLikelihood, self).__init__(x=x, y=y, func=func)
+        super(PoissonLikelihood, self).__init__(x=x, y=y, func=func, **kwargs)
 
     def log_likelihood(self):
-        rate = self.func(self.x, **self.model_parameters)
+        rate = self.func(self.x, **self.model_parameters, **self.kwargs)
         if not isinstance(rate, np.ndarray):
             raise ValueError(
                 "Poisson rate function returns wrong value type! "
@@ -286,7 +287,7 @@ class PoissonLikelihood(Analytical1DLikelihood):
 
 
 class ExponentialLikelihood(Analytical1DLikelihood):
-    def __init__(self, x, y, func):
+    def __init__(self, x, y, func, **kwargs):
         """
         An exponential likelihood function.
 
@@ -302,10 +303,10 @@ class ExponentialLikelihood(Analytical1DLikelihood):
             value is given). The model should return the expected mean of
             the exponential distribution for each data point.
         """
-        super(ExponentialLikelihood, self).__init__(x=x, y=y, func=func)
+        super(ExponentialLikelihood, self).__init__(x=x, y=y, func=func, **kwargs)
 
     def log_likelihood(self):
-        mu = self.func(self.x, **self.model_parameters)
+        mu = self.func(self.x, **self.model_parameters, **self.kwargs)
         if np.any(mu < 0.):
             return -np.inf
         return -np.sum(np.log(mu) + (self.y / mu))
@@ -328,7 +329,7 @@ class ExponentialLikelihood(Analytical1DLikelihood):
 
 
 class StudentTLikelihood(Analytical1DLikelihood):
-    def __init__(self, x, y, func, nu=None, sigma=1.):
+    def __init__(self, x, y, func, nu=None, sigma=1, **kwargs):
         """
         A general Student's t-likelihood for known or unknown number of degrees
         of freedom, and known or unknown scale (which tends toward the standard
@@ -357,7 +358,7 @@ class StudentTLikelihood(Analytical1DLikelihood):
             Set the scale of the distribution. If not given then this defaults
             to 1, which specifies a standard (central) Student's t-distribution
         """
-        super(StudentTLikelihood, self).__init__(x=x, y=y, func=func)
+        super(StudentTLikelihood, self).__init__(x=x, y=y, func=func, **kwargs)
 
         self.nu = nu
         self.sigma = sigma
@@ -406,7 +407,7 @@ class Multinomial(Likelihood):
     Likelihood for system with N discrete possibilities.
     """
 
-    def __init__(self, data, n_dimensions, label="parameter_"):
+    def __init__(self, data, n_dimensions, base="parameter_"):
         """
 
         Parameters
@@ -415,19 +416,21 @@ class Multinomial(Likelihood):
             The number of objects in each class
         n_dimensions: int
             The number of classes
+        base: str
+            The base of the parameter labels
         """
         self.data = np.array(data)
         self._total = np.sum(self.data)
         super(Multinomial, self).__init__(dict())
         self.n = n_dimensions
-        self.label = label
+        self.base = base
         self._nll = None
 
     def log_likelihood(self):
         """
         Since n - 1 parameters are sampled, the last parameter is 1 - the rest
         """
-        probs = [self.parameters[self.label + str(ii)]
+        probs = [self.parameters[self.base + str(ii)]
                  for ii in range(self.n - 1)]
         probs.append(1 - sum(probs))
         return self._multinomial_ln_pdf(probs=probs)
@@ -565,6 +568,167 @@ class JointLikelihood(Likelihood):
     def noise_log_likelihood(self):
         """ This is just the sum of the noise likelihoods of all parts of the joint likelihood"""
         return sum([likelihood.noise_log_likelihood() for likelihood in self.likelihoods])
+
+
+def function_to_celerite_mean_model(func):
+    from celerite.modeling import Model as CeleriteModel
+    return _function_to_gp_model(func, CeleriteModel)
+
+
+def function_to_george_mean_model(func):
+    from celerite.modeling import Model as GeorgeModel
+    return _function_to_gp_model(func, GeorgeModel)
+
+
+def _function_to_gp_model(func, cls):
+    class MeanModel(cls):
+        parameter_names = tuple(infer_args_from_function_except_n_args(func=func, n=1))
+
+        def get_value(self, t):
+            params = {name: getattr(self, name) for name in self.parameter_names}
+            return func(t, **params)
+
+        def compute_gradient(self, *args, **kwargs):
+            pass
+
+    return MeanModel
+
+
+class _GPLikelihood(Likelihood):
+
+    def __init__(self, kernel, mean_model, t, y, yerr=1e-6, gp_class=None):
+        """
+            Basic Gaussian Process likelihood interface for `celerite` and `george`.
+            For `celerite` documentation see: https://celerite.readthedocs.io/en/stable/
+            For `george` documentation see: https://george.readthedocs.io/en/latest/
+
+            Parameters
+            ==========
+            kernel: Union[celerite.term.Term, george.kernels.Kernel]
+                `celerite` or `george` kernel. See the respective package documentation about the usage.
+            mean_model: Union[celerite.modeling.Model, george.modeling.Model]
+                Mean model
+            t: array_like
+                The `times` or `x` values of the data set.
+            y: array_like
+                The `y` values of the data set.
+            yerr: float, int, array_like, optional
+                The error values on the y-values. If a single value is given, it is assumed that the value
+                applies for all y-values. Default is 1e-6, effectively assuming that no y-errors are present.
+            gp_class: type, None, optional
+                GPClass to use. This is determined by the child class used to instantiate the GP. Should usually
+                not be given by the user and is mostly used for testing
+        """
+        self.kernel = kernel
+        self.mean_model = mean_model
+        self.t = np.array(t)
+        self.y = np.array(y)
+        self.yerr = np.array(yerr)
+        self.GPClass = gp_class
+        self.gp = self.GPClass(kernel=self.kernel, mean=self.mean_model, fit_mean=True, fit_white_noise=True)
+        self.gp.compute(self.t, yerr=self.yerr)
+        super().__init__(parameters=self.gp.get_parameter_dict())
+
+    def set_parameters(self, parameters):
+        """
+        Safely set a set of parameters to the internal instances of the `gp` and `mean_model`, as well as the
+        `parameters` dict.
+
+        Parameters
+        ==========
+        parameters: dict, pandas.DataFrame
+            The set of parameters we would like to set.
+        """
+        for name, value in parameters.items():
+            try:
+                self.gp.set_parameter(name=name, value=value)
+            except ValueError:
+                pass
+            self.parameters[name] = value
+
+
+class CeleriteLikelihood(_GPLikelihood):
+
+    def __init__(self, kernel, mean_model, t, y, yerr=1e-6):
+        """
+            Basic Gaussian Process likelihood interface for `celerite` and `george`.
+            For `celerite` documentation see: https://celerite.readthedocs.io/en/stable/
+            For `george` documentation see: https://george.readthedocs.io/en/latest/
+
+            Parameters
+            ==========
+            kernel: celerite.term.Term
+                `celerite` or `george` kernel. See the respective package documentation about the usage.
+            mean_model: celerite.modeling.Model
+                Mean model
+            t: array_like
+                The `times` or `x` values of the data set.
+            y: array_like
+                The `y` values of the data set.
+            yerr: float, int, array_like, optional
+                The error values on the y-values. If a single value is given, it is assumed that the value
+                applies for all y-values. Default is 1e-6, effectively assuming that no y-errors are present.
+        """
+        import celerite
+        super().__init__(kernel=kernel, mean_model=mean_model, t=t, y=y, yerr=yerr, gp_class=celerite.GP)
+
+    def log_likelihood(self):
+        """
+        Calculate the log-likelihood for the Gaussian process given the current parameters.
+
+        Returns
+        =======
+        float: The log-likelihood value.
+        """
+        self.gp.set_parameter_vector(vector=np.array(list(self.parameters.values())))
+        try:
+            return self.gp.log_likelihood(self.y)
+        except Exception:
+            return -np.inf
+
+
+class GeorgeLikelihood(_GPLikelihood):
+
+    def __init__(self, kernel, mean_model, t, y, yerr=1e-6):
+        """
+            Basic Gaussian Process likelihood interface for `celerite` and `george`.
+            For `celerite` documentation see: https://celerite.readthedocs.io/en/stable/
+            For `george` documentation see: https://george.readthedocs.io/en/latest/
+
+            Parameters
+            ==========
+            kernel: george.kernels.Kernel
+                `celerite` or `george` kernel. See the respective package documentation about the usage.
+            mean_model: george.modeling.Model
+                Mean model
+            t: array_like
+                The `times` or `x` values of the data set.
+            y: array_like
+                The `y` values of the data set.
+            yerr: float, int, array_like, optional
+                The error values on the y-values. If a single value is given, it is assumed that the value
+                applies for all y-values. Default is 1e-6, effectively assuming that no y-errors are present.
+        """
+        import george
+        super().__init__(kernel=kernel, mean_model=mean_model, t=t, y=y, yerr=yerr, gp_class=george.GP)
+
+    def log_likelihood(self):
+        """
+        Calculate the log-likelihood for the Gaussian process given the current parameters.
+
+        Returns
+        =======
+        float: The log-likelihood value.
+        """
+        for name, value in self.parameters.items():
+            try:
+                self.gp.set_parameter(name=name, value=value)
+            except ValueError:
+                raise ValueError(f"Parameter {name} not a valid parameter for the GP.")
+        try:
+            return self.gp.log_likelihood(self.y)
+        except Exception:
+            return -np.inf
 
 
 class MarginalizedLikelihoodReconstructionError(Exception):

@@ -363,7 +363,7 @@ class Result(object):
             The number of times the likelihood function is called
         log_prior_evaluations: array_like
             The evaluations of the prior for each sample point
-        sampling_time: (datetime.timedelta, float)
+        sampling_time: datetime.timedelta, float
             The time taken to complete the sampling
         nburn: int
             The number of burn-in steps discarded for MCMC samplers
@@ -1849,7 +1849,7 @@ class ResultList(list):
             raise ResultListError("Inconsistent parameters between results")
 
     def check_consistent_data(self):
-        if not np.all([res.log_noise_evidence == self[0].log_noise_evidence for res in self])\
+        if not np.allclose([res.log_noise_evidence for res in self], self[0].log_noise_evidence, atol=1e-8, rtol=0.0)\
                 and not np.all([np.isnan(res.log_noise_evidence) for res in self]):
             raise ResultListError("Inconsistent data between results")
 
@@ -1977,6 +1977,8 @@ def make_pp_plot(results, filename=None, save=True, confidence_interval=[0.68, 0
         The font size for the legend
     keys: list
         A list of keys to use, if None defaults to search_parameter_keys
+    title: bool
+        Whether to add the number of results and total p-value as a plot title
     confidence_interval_alpha: float, list, optional
         The transparency for the background condifence interval
     weight_list: list, optional
@@ -1998,11 +2000,12 @@ def make_pp_plot(results, filename=None, save=True, confidence_interval=[0.68, 0
     if weight_list is None:
         weight_list = [None] * len(results)
 
-    credible_levels = pd.DataFrame()
+    credible_levels = list()
     for i, result in enumerate(results):
-        credible_levels = credible_levels.append(
-            result.get_all_injection_credible_levels(keys, weights=weight_list[i]),
-            ignore_index=True)
+        credible_levels.append(
+            result.get_all_injection_credible_levels(keys, weights=weight_list[i])
+        )
+    credible_levels = pd.DataFrame(credible_levels)
 
     if lines is None:
         colors = ["C{}".format(i) for i in range(8)]
