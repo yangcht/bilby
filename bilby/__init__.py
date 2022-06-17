@@ -47,3 +47,6 @@ Your choices:
  $ pip install 'bilby<0.6.4'
 
 """)
+
+from . import _version
+__version__ = _version.get_versions()['version']
