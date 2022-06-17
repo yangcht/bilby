@@ -59,7 +59,7 @@ def setup_logger(outdir='.', label=None, log_level='INFO', print_version=False):
 
 
 def get_version_information():
-    from bilby_pipe import _version
+    from bilby import _version
     return _version.get_versions()["version"]
 
 
