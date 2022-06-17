@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 import sys
 
@@ -60,13 +59,8 @@ def setup_logger(outdir='.', label=None, log_level='INFO', print_version=False):
 
 
 def get_version_information():
-    version_file = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.version')
-    try:
-        with open(version_file, 'r') as f:
-            return f.readline().rstrip()
-    except EnvironmentError:
-        print("No version information file '.version' found")
+    from bilby_pipe import _version
+    return _version.get_versions()["version"]
 
 
 def loaded_modules_dict():
