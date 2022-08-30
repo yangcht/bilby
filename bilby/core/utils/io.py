@@ -360,7 +360,7 @@ def recursively_save_dict_contents_to_group(h5file, path, dic):
         if isinstance(item, dict):
             recursively_save_dict_contents_to_group(h5file, path + key + "/", item)
         else:
-            h5file[path + key] = item
+            h5file[path + str(key)] = item
 
 
 def safe_file_dump(data, filename, module):
