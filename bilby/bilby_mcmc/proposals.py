@@ -593,11 +593,14 @@ class NormalizingFlowProposal(DensityEstimateProposal):
             fallback=fallback,
             scale_fits=scale_fits,
         )
-        self.setup_flow()
-        self.setup_optimizer()
-
+        self.initialised = False
         self.max_training_epochs = max_training_epochs
         self.js_factor = js_factor
+
+    def initialise(self):
+        self.setup_flow()
+        self.setup_optimizer()
+        self.initialised = True
 
     def setup_flow(self):
         if self.ndim < 3:
@@ -699,6 +702,9 @@ class NormalizingFlowProposal(DensityEstimateProposal):
         self.trained = True
 
     def propose(self, chain):
+        if self.initialised is False:
+            self.initialise
+
         import torch
 
         self.steps_since_refit += 1
