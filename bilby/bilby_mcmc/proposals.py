@@ -1094,10 +1094,6 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
         ]
         if GMMProposal.check_dependencies(warn=warn):
             plist.append(GMMProposal(priors, weight=big_weight, scale_fits=L1steps))
-        if NormalizingFlowProposal.check_dependencies(warn=warn):
-            plist.append(
-                NormalizingFlowProposal(priors, weight=big_weight, scale_fits=L1steps)
-            )
 
     plist = remove_proposals_using_string(plist, string)
     return ProposalCycle(plist)
