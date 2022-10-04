@@ -703,7 +703,7 @@ class NormalizingFlowProposal(DensityEstimateProposal):
 
     def propose(self, chain):
         if self.initialised is False:
-            self.initialise
+            self.initialise()
 
         import torch
 
