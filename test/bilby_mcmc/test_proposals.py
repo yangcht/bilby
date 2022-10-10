@@ -7,6 +7,7 @@ import importlib
 import sys
 import time
 import bilby
+import pytest
 from bilby.bilby_mcmc.chain import Chain, Sample
 from bilby.bilby_mcmc import proposals
 from bilby.bilby_mcmc.utils import LOGLKEY, LOGPKEY
@@ -177,6 +178,7 @@ class TestProposals(TestBaseProposals):
         else:
             print("nflows not installed, unable to test NormalizingFlowProposal")
 
+    @pytest.mark.skip(reason="nflows not installed")
     def test_NF_proposal_15D(self):
         ndim = 15
         priors = self.create_priors(ndim)
