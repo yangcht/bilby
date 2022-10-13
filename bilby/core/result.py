@@ -108,6 +108,26 @@ def get_weights_for_reweighting(
 
     See bilby.core.result.reweight() for help with the inputs
 
+    Parameters
+    ==========
+    result: Result
+        The result file containing the posterior samples to reweight
+    new_likelihood: bilby.core.likelihood.Likelihood
+        The new likelihood object, if `None`, no likelihood reweighting will
+        be done.
+    new_prior: bilby.core.prior.PriorDict
+        The new priors, if `None`, no prior reweighting will be done.
+    old_likelihood: bilby.core.likelihood.Likelihood
+        The original likelihood object, if `None`, the values stored in
+        :code:`Result.posterior["log_likelihood"]` will be used.
+    old_prior: bilby.core.prior.PriorDict
+        The old priors, if `None`, the values stored in
+        :code:`Result.posterior["ln_prior"]` will be used.
+    resume_file: string
+        filepath for the resume file which stores the weights
+    n_checkpoint: int
+        Number of samples to reweight before writing a resume file
+
     Returns
     =======
     ln_weights: array
@@ -120,10 +140,6 @@ def get_weights_for_reweighting(
         An array of the natural-log likelihoods from the old likelihood
     old_log_prior_array: array
         An array of the natural-log priors
-    resume_file: string
-        filepath for the resume file which stores the weights
-    n_checkpoint: int
-        Number of samples to reweight before writing a resume file
     """
     from tqdm.auto import tqdm
 
@@ -148,29 +164,21 @@ def get_weights_for_reweighting(
         # Convert sample to dictionary
         par_sample = {key: sample[key] for key in result.posterior}
 
-        if old_likelihood is not None:
-            old_likelihood.parameters.update(par_sample)
-            old_log_likelihood_array[ii] = old_likelihood.log_likelihood()
-        else:
-            old_log_likelihood_array[ii] = sample["log_likelihood"]
-
         if new_likelihood is not None:
             new_likelihood.parameters.update(par_sample)
             new_log_likelihood_array[ii] = new_likelihood.log_likelihood()
-        else:
-            # Don't perform likelihood reweighting (i.e. likelihood isn't updated)
-            new_log_likelihood_array[ii] = old_log_likelihood_array[ii]
-
-        if old_prior is not None:
-            old_log_prior_array[ii] = old_prior.ln_prob(par_sample)
-        else:
-            old_log_prior_array[ii] = sample["log_prior"]
+            if old_likelihood is not None:
+                old_likelihood.parameters.update(par_sample)
+                old_log_likelihood_array[ii] = old_likelihood.log_likelihood()
+            else:
+                old_log_likelihood_array[ii] = sample["log_likelihood"]
 
         if new_prior is not None:
             new_log_prior_array[ii] = new_prior.ln_prob(par_sample)
-        else:
-            # Don't perform prior reweighting (i.e. prior isn't updated)
-            new_log_prior_array[ii] = old_log_prior_array[ii]
+            if old_prior is not None:
+                old_log_prior_array[ii] = old_prior.ln_prob(par_sample)
+            else:
+                old_log_prior_array[ii] = sample["log_prior"]
 
         if (ii % (n_checkpoint) == 0) and (resume_file is not None):
             checkpointed_index = np.argmin(np.abs(old_log_likelihood_array))
@@ -209,7 +217,32 @@ def reweight(result, label=None, new_likelihood=None, new_prior=None,
              old_likelihood=None, old_prior=None, conversion_function=None, npool=1,
              verbose_output=False, resume_file=None, n_checkpoint=5000,
              use_nested_samples=False):
-    """ Reweight a result to a new likelihood/prior using rejection sampling
+    r""" Reweight a result to a new likelihood/prior using rejection sampling
+
+    Weights are calculated for each posterior sample as
+
+    .. math::
+
+        w_{i} = \frac{
+            {\cal L}_{\rm new}(d | \theta_{i}) \pi_{\rm new}(\theta_{i})
+        }{
+            {\cal L}_{\rm old}(d | \theta_{i}) \pi_{\rm old}(\theta_{i})
+        }.
+
+    Here :math:`{\cal L}` is the likelihood and :math`\pi` is the prior
+    distribution.
+
+    Following this, the Bayes factor comparing the two models is computed as
+
+    .. math::
+
+        \ln BF = \left< w_{i} \right> +/- \sigma_{w}. \\
+        \sigma^{2}_{w} = \frac{1}{N}
+            \frac{\left< w^{2}_{i} - \left< w_{i} \right>^{2}\right>}
+            {\left< w_{i} \right>^{2}}.
+
+    The posterior samples are rejection sampled, i.e., kept with probability
+    :math:`w_{i}`.
 
     Parameters
     ==========
@@ -267,14 +300,15 @@ def reweight(result, label=None, new_likelihood=None, new_prior=None,
     nposterior = len(result.posterior)
     logger.info("Reweighting posterior with {} samples".format(nposterior))
 
-    ln_weights, new_log_likelihood_array, new_log_prior_array, old_log_likelihood_array, old_log_prior_array =\
+    ln_weights, new_log_likelihood_array, new_log_prior_array, old_log_likelihood_array, old_log_prior_array = (
         get_weights_for_reweighting(
             result, new_likelihood=new_likelihood, new_prior=new_prior,
             old_likelihood=old_likelihood, old_prior=old_prior,
-            resume_file=resume_file, n_checkpoint=n_checkpoint)
-
-    weights = np.exp(ln_weights)
-
+            resume_file=resume_file, n_checkpoint=n_checkpoint
+        )
+    )
+    max_ln_weight = max(ln_weights)
+    weights = np.exp(ln_weights - max_ln_weight)
     if use_nested_samples:
         weights *= result.posterior['weights']
 
@@ -288,9 +322,18 @@ def reweight(result, label=None, new_likelihood=None, new_prior=None,
     result.meta_data["reweighted_using_rejection_sampling"] = True
 
     if use_nested_samples:
-        result.log_evidence += np.log(np.sum(weights))
+        ln_bayes_factor = np.log(np.sum(weights)) + max_ln_weight
     else:
-        result.log_evidence += logsumexp(ln_weights) - np.log(nposterior)
+        ln_bayes_factor = logsumexp(ln_weights) - np.log(nposterior)
+    result.log_evidence += ln_bayes_factor
+    result.log_bayes_factor += ln_bayes_factor
+
+    variance = (
+            (np.mean(weights ** 2) - np.mean(weights) ** 2)
+            / np.mean(weights) ** 2
+            / len(ln_weights)
+    )
+    result.log_evidence_err = (result.log_evidence_err**2 + variance) ** 0.5
 
     if new_prior is not None:
         for key, prior in new_prior.items():
@@ -298,7 +341,7 @@ def reweight(result, label=None, new_likelihood=None, new_prior=None,
 
     if conversion_function is not None:
         data_frame = result.posterior
-        if "npool" in inspect.getargspec(conversion_function).args:
+        if "npool" in inspect.signature(conversion_function).parameters:
             data_frame = conversion_function(data_frame, new_likelihood, new_prior, npool=npool)
         else:
             data_frame = conversion_function(data_frame, new_likelihood, new_prior)

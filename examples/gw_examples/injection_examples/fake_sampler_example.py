@@ -11,6 +11,8 @@ evidence estimates for the more expensive model.
 We additionally change the prior for the second stage, because we can.
 """
 
+from copy import deepcopy
+
 import numpy as np
 import bilby
 
@@ -119,20 +121,18 @@ likelihood_2 = bilby.gw.GravitationalWaveTransient(
 sample_file = f"{result_1.outdir}/{result_1.label}_result.hdf5"
 
 # update the mass prior to be uniform in component masses
-priors["chirp_mass"] = bilby.gw.prior.UniformInComponentsChirpMass(30, 50)
-priors["mass_ratio"] = bilby.gw.prior.UniformInComponentsMassRatio(0.05, 0.25)
+priors_2 = deepcopy(priors)
+priors_2["chirp_mass"] = bilby.gw.prior.UniformInComponentsChirpMass(30, 40)
+priors_2["mass_ratio"] = bilby.gw.prior.UniformInComponentsMassRatio(0.05, 0.25)
 
-result_2 = bilby.run_sampler(
-    likelihood=likelihood_2,
-    priors=priors,
-    sampler="fake_sampler",
-    sample_file=sample_file,
-    injection_parameters=injection_parameters,
-    outdir=outdir,
-    label=f"{label}_XPHM",
-    save="hdf5",
-    plot=True,
-    verbose=True,
+result_2 = bilby.core.result.reweight(
+    result_1,
+    new_likelihood=likelihood_2,
+    new_prior=priors_2,
+    old_likelihood=likelihood_1,
+    old_prior=priors,
+    resume_file=f"{outdir}/importance_weights.txt",
+    use_nested_samples=True,
 )
 
 bilby.core.result.plot_multiple([result_1, result_2])
