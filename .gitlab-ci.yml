@@ -270,6 +270,8 @@ pages:
   stage: deploy
   image: docker:20.10.12
   needs: ["containers"]
+  only:
+    - schedules
   except:
     refs:
       - schedules
