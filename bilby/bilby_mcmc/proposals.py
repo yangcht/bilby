@@ -898,6 +898,70 @@ class PhasePolarisationReversalProposal(PhaseReversalProposal):
         return sample, log_factor
 
 
+class Reflect(BaseProposal):
+
+    def __init__(self, priors, name, weight=1, plane=0):
+        super(Reflect, self).__init__(priors=priors, weight=weight)
+        self.name = name
+        self.plane = plane
+
+    def propose(self, chain):
+        sample = chain.current_sample
+        sample[self.name] = 2 * self.plane - sample[self.name]
+        return sample, 0
+
+
+class Periodic(BaseProposal):
+
+    def __init__(self, priors, name, weight=1, advance=np.pi):
+        super(Periodic, self).__init__(priors=priors, weight=weight)
+        self.name = name
+        self.minimum = priors[name].minimum
+        self.maximum = priors[name].maximum
+        self.period = self.maximum - self.minimum
+        self.advance = advance
+
+    def propose(self, chain):
+        sample = chain.current_sample
+        sample[self.name] = np.mod(sample[self.name] + self.advance - self.minimum, self.period) + self.minimum
+        return sample, 0
+
+
+def _reflect(val, plane=0):
+    return 2 * plane - val
+
+
+def _advance(val, advance=np.pi, minimum=0, period=2 * np.pi):
+    return np.mod(val + advance - minimum, period) + minimum
+
+
+_maps = dict(
+    cos_theta_jn=(_reflect, dict()),
+    theta_jn=(_reflect, dict(plane=np.pi / 2)),
+    delta_phase=(_advance, dict()),
+    phase=(_advance, dict()),
+    psi=(_advance, dict(advance=np.pi / 2, period=np.pi)),
+)
+
+
+class ExtrinsicJump(BaseProposal):
+
+    def __init__(self, priors, weight=1):
+        super(ExtrinsicJump, self).__init__(priors=priors, weight=weight)
+        self.active = list()
+        for key in _maps:
+            if key in priors:
+                self.active.append(key)
+        self.n_active = len(self.active)
+
+    def propose(self, chain):
+        sample = chain.current_sample
+        for key in self.active:
+            if np.random.uniform(0, 1) < 1 / self.n_active:
+                sample[key] = _maps[key][0](sample[key], **_maps[key][1])
+        return sample, 0
+
+
 class StretchProposal(BaseProposal):
     """The Goodman & Weare (2010) Stretch proposal for an MCMC chain
 
@@ -1084,6 +1148,8 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
                 CorrelatedPolarisationPhaseJump(priors, weight=tiny_weight),
                 PhasePolarisationReversalProposal(priors, weight=tiny_weight),
             ]
+        if set(priors.keys()).intersection(_maps.keys()):
+            plist += ExtrinsicJump(priors=priors, weight=tiny_weight)
         for key in ["time_jitter", "psi", "phi_12", "tilt_2", "lambda_1", "lambda_2"]:
             if key in priors.non_fixed_keys:
                 plist.append(PriorProposal(priors, subset=[key], weight=tiny_weight))

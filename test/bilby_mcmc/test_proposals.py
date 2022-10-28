@@ -6,11 +6,14 @@ import inspect
 import importlib
 import sys
 import time
+
+import numpy as np
+import pytest
+
 import bilby
 from bilby.bilby_mcmc.chain import Chain, Sample
 from bilby.bilby_mcmc import proposals
 from bilby.bilby_mcmc.utils import LOGLKEY, LOGPKEY
-import numpy as np
 
 
 class GivenProposal(proposals.BaseProposal):
@@ -114,15 +117,20 @@ class TestProposals(TestBaseProposals):
         )
         clsmembers_clean = []
         for name, cls in clsmembers:
-            a = "Proposal" in name
-            b = "Base" not in name
-            c = "Ensemble" not in name
-            d = "Phase" not in name
-            e = "Polarisation" not in name
-            f = "Cycle" not in name
-            g = "KDE" not in name
-            h = "NormalizingFlow" not in name
-            if a * b * c * d * e * f * g * h:
+            found = ["Proposal" in name]
+            for base in [
+                "Base",
+                "Ensemble",
+                "Phase",
+                "Polarisation",
+                "Cycle",
+                "KDE",
+                "NormalizingFlow",
+                "Reflect",
+                "Periodic",
+            ]:
+                found.append(base not in name)
+            if all(found):
                 clsmembers_clean.append((name, cls))
 
         return clsmembers_clean
@@ -154,44 +162,79 @@ class TestProposals(TestBaseProposals):
         self.proposal_check(prop, N=20000)
 
     def test_GMM_proposal(self):
-        if importlib.util.find_spec("sklearn") is not None:
-            priors = self.create_priors()
-            prop = proposals.GMMProposal(priors)
-            self.proposal_check(prop, N=20000)
-            self.assertTrue(prop.trained)
-        else:
-            print("Unable to test GMM as sklearn is not installed")
+        pytest.importorskip("sklearn")
+        priors = self.create_priors()
+        prop = proposals.GMMProposal(priors)
+        self.proposal_check(prop, N=20000)
+        self.assertTrue(prop.trained)
 
     def test_NF_proposal(self):
+        pytest.importorskip("nflows")
+        pytest.importorskip("torch")
         priors = self.create_priors()
         chain = self.create_chain(10000)
-        if proposals.NormalizingFlowProposal.check_dependencies():
-            prop = proposals.NormalizingFlowProposal(priors, first_fit=10000)
-            prop.steps_since_refit = 9999
-            start = time.time()
-            p, w = prop(chain)
-            dt = time.time() - start
-            print(f"Training for {prop.__class__.__name__} took dt~{dt:0.2g} [s]")
-            self.assertTrue(prop.trained)
-            self.proposal_check(prop)
-        else:
-            print("nflows not installed, unable to test NormalizingFlowProposal")
+        prop = proposals.NormalizingFlowProposal(priors, first_fit=10000)
+        prop.steps_since_refit = 9999
+        start = time.time()
+        p, w = prop(chain)
+        dt = time.time() - start
+        print(f"Training for {prop.__class__.__name__} took dt~{dt:0.2g} [s]")
+        self.assertTrue(prop.trained)
+        self.proposal_check(prop)
 
     def test_NF_proposal_15D(self):
+        pytest.importorskip("nflows")
+        pytest.importorskip("torch")
         ndim = 15
         priors = self.create_priors(ndim)
         chain = self.create_chain(10000, ndim=ndim)
-        if proposals.NormalizingFlowProposal.check_dependencies():
-            prop = proposals.NormalizingFlowProposal(priors, first_fit=10000)
-            prop.steps_since_refit = 9999
-            start = time.time()
-            p, w = prop(chain)
-            dt = time.time() - start
-            print(f"Training for {prop.__class__.__name__} took dt~{dt:0.2g} [s]")
-            self.assertTrue(prop.trained)
-            self.proposal_check(prop, ndim=ndim)
-        else:
-            print("nflows not installed, unable to test NormalizingFlowProposal")
+        prop = proposals.NormalizingFlowProposal(priors, first_fit=10000)
+        prop.steps_since_refit = 9999
+        start = time.time()
+        p, w = prop(chain)
+        dt = time.time() - start
+        print(f"Training for {prop.__class__.__name__} took dt~{dt:0.2g} [s]")
+        self.assertTrue(prop.trained)
+        self.proposal_check(prop, ndim=ndim)
+
+    def test_extrinsic_jump(self):
+        priors = bilby.core.prior.PriorDict(dict(
+            theta_jn=bilby.core.prior.Sine(),
+            cos_theta_jn=bilby.core.prior.Uniform(-1, 1),
+            delta_phase=bilby.core.prior.Uniform(0, 2 * np.pi),
+            phase=bilby.core.prior.Uniform(0, 2 * np.pi),
+            psi=bilby.core.prior.Uniform(0, np.pi),
+        ))
+        prop = proposals.ExtrinsicJump(priors=priors)
+        initial_sample = Sample(dict(
+            theta_jn=0.2,
+            cos_theta_jn=0.2,
+            delta_phase=0.2,
+            phase=0.2,
+            psi=0.2,
+        ))
+        initial_sample[LOGLKEY] = 0.0
+        initial_sample[LOGPKEY] = 0.0
+        expected = Sample(dict(
+            theta_jn=np.pi - 0.2,
+            cos_theta_jn=-0.2,
+            delta_phase=0.2 + np.pi,
+            phase=0.2 + np.pi,
+            psi=0.2 + np.pi / 2,
+        ))
+        expected[LOGLKEY] = 0.0
+        expected[LOGPKEY] = 0.0
+        chain = Chain(initial_sample)
+        for _ in range(100):
+            proposed, _ = prop.propose(chain)
+            chain.append(proposed)
+        for key in proposed.parameter_keys:
+            self.assertLess(
+                min(
+                    abs(proposed[key] - initial_sample[key]),
+                    abs(proposed[key] - expected[key])
+                ), 1e-8
+            )
 
 
 if __name__ == "__main__":
