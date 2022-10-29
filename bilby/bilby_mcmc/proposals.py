@@ -899,7 +899,6 @@ class PhasePolarisationReversalProposal(PhaseReversalProposal):
 
 
 class Reflect(BaseProposal):
-
     def __init__(self, priors, name, weight=1, plane=0):
         super(Reflect, self).__init__(priors=priors, weight=weight)
         self.name = name
@@ -912,7 +911,6 @@ class Reflect(BaseProposal):
 
 
 class Periodic(BaseProposal):
-
     def __init__(self, priors, name, weight=1, advance=np.pi):
         super(Periodic, self).__init__(priors=priors, weight=weight)
         self.name = name
@@ -923,7 +921,10 @@ class Periodic(BaseProposal):
 
     def propose(self, chain):
         sample = chain.current_sample
-        sample[self.name] = np.mod(sample[self.name] + self.advance - self.minimum, self.period) + self.minimum
+        sample[self.name] = (
+            np.mod(sample[self.name] + self.advance - self.minimum, self.period)
+            + self.minimum
+        )
         return sample, 0
 
 
@@ -945,7 +946,6 @@ _maps = dict(
 
 
 class ExtrinsicJump(BaseProposal):
-
     def __init__(self, priors, weight=1):
         super(ExtrinsicJump, self).__init__(priors=priors, weight=weight)
         self.active = list()
