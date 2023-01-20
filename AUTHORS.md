@@ -9,6 +9,7 @@ Aditya Vijaykumar
 Andrew Kim
 Andrew Miller
 Antoni Ramos-Buades
+Apratim Ganguly
 Avi Vajpeyi
 Bruce Edelman
 Carl-Johan Haster
@@ -40,6 +41,7 @@ Karl Wette
 Katerina Chatziioannou
 Kaylee de Soto
 Khun Sang Phukon
+Kruthi Krishna
 Kshipraa Athar
 Leslie Wade
 Liting Xiao
@@ -57,6 +59,7 @@ Moritz Huebner
 Nicola De Lillo
 Nikhil Sarin
 Nirban Bose
+Noah Wolfe
 Olivia Wilk
 Paul Easter
 Paul Lasky

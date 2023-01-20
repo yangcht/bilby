@@ -42,7 +42,7 @@ def lal_binary_black_hole(
     theta_jn: float
         Angle between the total binary angular momentum and the line of sight
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Optional keyword arguments
         Supported arguments:
@@ -125,7 +125,7 @@ def lal_binary_neutron_star(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     lambda_1: float
         Dimensionless tidal deformability of mass_1
     lambda_2: float
@@ -197,7 +197,7 @@ def lal_eccentric_binary_black_hole_no_spins(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Optional keyword arguments
         Supported arguments:
@@ -275,7 +275,7 @@ def _base_lal_cbc_fd_waveform(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     eccentricity: float
         Binary eccentricity
     lambda_1: float
@@ -444,6 +444,78 @@ def binary_neutron_star_roq(
         phi_12=phi_12, lambda_1=lambda_1, lambda_2=lambda_2, **waveform_kwargs)
 
 
+def lal_binary_black_hole_relative_binning(
+        frequency_array, mass_1, mass_2, luminosity_distance, a_1, tilt_1,
+        phi_12, a_2, tilt_2, phi_jl, theta_jn, phase, fiducial, **kwargs):
+    """ Source model to go with RelativeBinningGravitationalWaveTransient likelihood.
+
+    All parameters are the same as in the usual source models, except `fiducial`
+
+    fiducial: float
+        If fiducial=1, waveform evaluated on the full frequency grid is returned.
+        If fiducial=0, waveform evaluated at waveform_kwargs["frequency_bin_edges"]
+        is returned.
+    """
+
+    waveform_kwargs = dict(
+        waveform_approximant='IMRPhenomPv2', reference_frequency=50.0,
+        minimum_frequency=20.0, maximum_frequency=frequency_array[-1],
+        catch_waveform_errors=False, pn_spin_order=-1, pn_tidal_order=-1,
+        pn_phase_order=-1, pn_amplitude_order=0)
+    waveform_kwargs.update(kwargs)
+
+    if fiducial == 1:
+        return _base_lal_cbc_fd_waveform(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_jl=phi_jl,
+            phi_12=phi_12, lambda_1=0.0, lambda_2=0.0, **waveform_kwargs)
+
+    else:
+        waveform_kwargs["frequencies"] = waveform_kwargs.pop("frequency_bin_edges")
+        return _base_waveform_frequency_sequence(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_jl=phi_jl,
+            phi_12=phi_12, lambda_1=0.0, lambda_2=0.0, **waveform_kwargs)
+
+
+def lal_binary_neutron_star_relative_binning(
+        frequency_array, mass_1, mass_2, luminosity_distance, a_1, tilt_1,
+        phi_12, a_2, tilt_2, phi_jl, lambda_1, lambda_2, theta_jn, phase,
+        fiducial, **kwargs):
+    """ Source model to go with RelativeBinningGravitationalWaveTransient likelihood.
+
+    All parameters are the same as in the usual source models, except `fiducial`
+
+    fiducial: float
+        If fiducial=1, waveform evaluated on the full frequency grid is returned.
+        If fiducial=0, waveform evaluated at waveform_kwargs["frequency_bin_edges"]
+        is returned.
+    """
+
+    waveform_kwargs = dict(
+        waveform_approximant='IMRPhenomPv2_NRTidal', reference_frequency=50.0,
+        minimum_frequency=20.0, maximum_frequency=frequency_array[-1],
+        catch_waveform_errors=False, pn_spin_order=-1, pn_tidal_order=-1,
+        pn_phase_order=-1, pn_amplitude_order=0)
+    waveform_kwargs.update(kwargs)
+
+    if fiducial == 1:
+        return _base_lal_cbc_fd_waveform(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_12=phi_12,
+            phi_jl=phi_jl, lambda_1=lambda_1, lambda_2=lambda_2, **waveform_kwargs)
+    else:
+        waveform_kwargs["frequencies"] = waveform_kwargs.pop("frequency_bin_edges")
+        return _base_waveform_frequency_sequence(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_jl=phi_jl,
+            phi_12=phi_12, lambda_1=lambda_1, lambda_2=lambda_2, **waveform_kwargs)
+
+
 def _base_roq_waveform(
         frequency_array, mass_1, mass_2, luminosity_distance, a_1, tilt_1,
         phi_12, a_2, tilt_2, lambda_1, lambda_2, phi_jl, theta_jn, phase,
@@ -476,7 +548,7 @@ def _base_roq_waveform(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
 
     Waveform arguments
     ===================
@@ -577,7 +649,7 @@ def binary_black_hole_frequency_sequence(
     theta_jn: float
         Angle between the total binary angular momentum and the line of sight
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Required keyword arguments
         - frequencies:
@@ -663,7 +735,7 @@ def binary_neutron_star_frequency_sequence(
     theta_jn: float
         Angle between the total binary angular momentum and the line of sight
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Required keyword arguments
         - frequencies:
@@ -739,7 +811,7 @@ def _base_waveform_frequency_sequence(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     waveform_kwargs: dict
         Optional keyword arguments
 
