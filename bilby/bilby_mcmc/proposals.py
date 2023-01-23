@@ -1149,7 +1149,7 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
                 PhasePolarisationReversalProposal(priors, weight=tiny_weight),
             ]
         if set(priors.keys()).intersection(_maps.keys()):
-            plist += ExtrinsicJump(priors=priors, weight=tiny_weight)
+            plist.append(ExtrinsicJump(priors=priors, weight=tiny_weight))
         for key in ["time_jitter", "psi", "phi_12", "tilt_2", "lambda_1", "lambda_2"]:
             if key in priors.non_fixed_keys:
                 plist.append(PriorProposal(priors, subset=[key], weight=tiny_weight))
