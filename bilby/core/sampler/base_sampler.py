@@ -187,7 +187,7 @@ class Sampler(object):
     """
 
     default_kwargs = dict()
-    check_point_equiv_kwargs = ['check_point_deltaT', 'check_point_delta_t']
+    check_point_equiv_kwargs = ["check_point_deltaT", "check_point_delta_t"]
     npool_equiv_kwargs = [
         "npool",
         "queue_size",

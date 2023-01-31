@@ -2,11 +2,50 @@ import numpy as np
 import scipy.linalg
 
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import differential_evolution
+
+from .utils.log import logger
+
+
+def get_initial_maximimum_posterior_sample(likelihood, priors, keys, beta=1, n_attempts=1):
+    """A method to attempt optimization of the maximum likelihood
+
+    This uses a simple scipy optimization approach, starting from a number
+    of draws from the prior to avoid problems with local optimization.
+
+    """
+    logger.info("Finding initial maximum posterior estimate")
+
+    bounds = []
+    for key in keys:
+        bounds.append((priors[key].minimum, priors[key].maximum))
+
+    def neg_log_post(x):
+        sample = {key: val for key, val in zip(keys, x)}
+        ln_prior = priors.ln_prob(sample)
+
+        if np.isinf(ln_prior):
+            return -np.inf
+
+        likelihood.parameters.update(sample)
+
+        return -beta * likelihood.log_likelihood() - ln_prior
+
+    res = differential_evolution(neg_log_post, bounds, popsize=100, init="sobol")
+    counter = 1
+    while counter < n_attempts:
+        counter += 1
+        res = differential_evolution(neg_log_post, bounds, popsize=100, init="sobol", x0=res.x)
+    if res.success:
+        sample = {key: val for key, val in zip(keys, res.x)}
+        logger.info(f"Initial maximum posterior estimate {sample}")
+        return sample
+    else:
+        raise ValueError("Failed to find initial maximum posterior estimate")
 
 
 class FisherMatrixPosteriorEstimator(object):
-    def __init__(self, likelihood, priors, parameters=None, fd_eps=1e-6, n_prior_samples=100):
+    def __init__(self, likelihood, priors, parameters=None, fd_eps=1e-6, n_prior_samples=10):
         """ A class to estimate posteriors using the Fisher Matrix approach
 
         Parameters
@@ -33,11 +72,8 @@ class FisherMatrixPosteriorEstimator(object):
         self.n_prior_samples = n_prior_samples
         self.N = len(self.parameter_names)
 
+        self.priors = priors
         self.prior_width_dict = {key: np.max(priors[key].width) for key in self.parameter_names}
-        self.prior_samples = [
-            {key: priors[key].sample() for key in self.parameter_names} for _ in range(n_prior_samples)
-        ]
-        self.prior_bounds = [(priors[key].minimum, priors[key].maximum) for key in self.parameter_names]
 
     def log_likelihood(self, sample):
         self.likelihood.parameters.update(sample)
@@ -56,7 +92,11 @@ class FisherMatrixPosteriorEstimator(object):
 
     def sample_array(self, sample, n=1):
         if sample == "maxL":
-            sample = self.get_maximimum_likelihood_sample()
+            sample = get_initial_maximimum_posterior_sample(
+                likelihood=self.likelihood,
+                priors=self.priors,
+                keys=self.parameter_names,
+            )
 
         self.mean = np.array(list(sample.values()))
         self.iFIM = self.calculate_iFIM(sample)
@@ -152,24 +192,9 @@ class FisherMatrixPosteriorEstimator(object):
         is large or the prior is wide relative to the prior, the method fails
         to find the global maximum in high dimensional problems.
         """
-        minlogL = np.inf
-        for i in range(self.n_prior_samples):
-            initial_sample = self.prior_samples[i]
-
-            x0 = list(initial_sample.values())
-
-            def neg_log_like(x, self, T=1):
-                sample = {key: val for key, val in zip(self.parameter_names, x)}
-                return - 1 / T * self.log_likelihood(sample)
-
-            out = minimize(
-                neg_log_like,
-                x0,
-                args=(self, 1),
-                bounds=self.prior_bounds,
-                method="L-BFGS-B",
-            )
-            if out.fun < minlogL:
-                minout = out
-
-        return {key: val for key, val in zip(self.parameter_names, minout.x)}
+        return get_initial_maximimum_posterior_sample(
+            likelihood=self.likelihood,
+            priors=self.priors,
+            keys=self.parameter_names,
+            n_attempts=self.n_prior_samples,
+        )

@@ -6,9 +6,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import differential_evolution
 
-from ..core.fisher import FisherMatrixPosteriorEstimator
+from ..core.fisher import get_initial_maximimum_posterior_sample
 from ..core.result import rejection_sample
 from ..core.sampler.base_sampler import (
     MCMCSampler,
@@ -1122,14 +1121,23 @@ class BilbyMCMCSampler(object):
                 if k in _sampling_convenience_dump.priors.non_fixed_keys
             }
         elif initial_sample_method.lower() in ["maximize", "maximise", "maximum"]:
-            initial_sample = get_initial_maximimum_posterior_sample(self.beta)
+            initial_sample = get_initial_maximimum_posterior_sample(
+                likelihood=_sampling_convenience_dump.likelihood,
+                priors=_sampling_convenience_dump.priors,
+                keys=_sampling_convenience_dump.search_parameter_keys,
+                beta=self.beta,
+                n_attempts=1,
+            )
         else:
             raise ValueError(
                 f"initial sample method {initial_sample_method} not understood"
             )
 
         if initial_sample_dict is not None:
-            initial_sample.update(initial_sample_dict)
+            initial_sample.update({
+                key: value for key, value in initial_sample_dict.items()
+                if key in _sampling_convenience_dump.priors.non_fixed_keys
+            })
 
         logger.info(f"Using initial sample {initial_sample}")
         initial_sample = Sample(initial_sample)
@@ -1206,9 +1214,7 @@ class BilbyMCMCSampler(object):
         while internal_steps < self.chain.L1steps:
             internal_steps += 1
             proposal = self.proposal_cycle.get_proposal()
-            prop, log_factor = proposal(
-                self.chain, likelihood=_likelihood, priors=_priors
-            )
+            prop, log_factor = proposal(self.chain)
             logp = self.log_prior(prop)
 
             if np.isinf(logp) or np.isnan(logp):
@@ -1306,42 +1312,6 @@ class BilbyMCMCSampler(object):
                 f"yielded {len(samples)} samples"
             )
         return samples
-
-
-def get_initial_maximimum_posterior_sample(beta):
-    """A method to attempt optimization of the maximum likelihood
-
-    This uses a simple scipy optimization approach, starting from a number
-    of draws from the prior to avoid problems with local optimization.
-
-    """
-    logger.info("Finding initial maximum posterior estimate")
-    likelihood = _sampling_convenience_dump.likelihood
-    priors = _sampling_convenience_dump.priors
-    search_parameter_keys = _sampling_convenience_dump.search_parameter_keys
-
-    bounds = []
-    for key in search_parameter_keys:
-        bounds.append((priors[key].minimum, priors[key].maximum))
-
-    def neg_log_post(x):
-        sample = {key: val for key, val in zip(search_parameter_keys, x)}
-        ln_prior = priors.ln_prob(sample)
-
-        if np.isinf(ln_prior):
-            return -np.inf
-
-        likelihood.parameters.update(sample)
-
-        return -beta * likelihood.log_likelihood() - ln_prior
-
-    res = differential_evolution(neg_log_post, bounds, popsize=100, init="sobol")
-    if res.success:
-        sample = {key: val for key, val in zip(search_parameter_keys, res.x)}
-        logger.info(f"Initial maximum posterior estimate {sample}")
-        return sample
-    else:
-        raise ValueError("Failed to find initial maximum posterior estimate")
 
 
 # Methods used to aid parallelisation:

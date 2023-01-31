@@ -51,11 +51,14 @@ priors = bilby.core.prior.PriorDict(priors)
 result = bilby.run_sampler(
     likelihood=likelihood,
     priors=priors,
-    sampler="dynesty",
-    nlive=1000,
+    sampler="bilby_mcmc",
     injection_parameters=injection_parameters,
     outdir=outdir,
-    label="Nested Sampling",
+    label="MCMC",
+    initial_sample_method="maximize",
+    proposal_cycle="defaultnoKDnoUNnoDEnoAG",
+    printdt=10,
+    nsamples=5000,
 )
 
 # Finally plot a corner plot: all outputs are stored in outdir

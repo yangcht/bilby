@@ -8,21 +8,26 @@ from scipy.stats import gaussian_kde
 
 from ..core.fisher import FisherMatrixPosteriorEstimator
 from ..core.prior import PriorDict
-from ..core.sampler.base_sampler import SamplerError
+from ..core.sampler.base_sampler import SamplerError, _sampling_convenience_dump
 from ..core.utils import logger, reflect
 from ..gw.source import PARAMETER_SETS
+from .utils import LOGLKEY, LOGPKEY
 
 
 class ProposalCycle(object):
     def __init__(self, proposal_list):
         self.proposal_list = proposal_list
-        self.weights = [prop.weight for prop in self.proposal_list]
-        self.normalized_weights = [w / sum(self.weights) for w in self.weights]
-        self.weighted_proposal_list = [
-            np.random.choice(self.proposal_list, p=self.normalized_weights)
-            for _ in range(10 * int(1 / min(self.normalized_weights)))
-        ]
-        self.nproposals = len(self.weighted_proposal_list)
+        if len(self.proposal_list) == 1:
+            self.weighted_proposal_list = proposal_list
+            self.nproposals = 1
+        else:
+            self.weights = [prop.weight for prop in self.proposal_list]
+            self.normalized_weights = [w / sum(self.weights) for w in self.weights]
+            self.weighted_proposal_list = [
+                np.random.choice(self.proposal_list, p=self.normalized_weights)
+                for _ in range(10 * int(1 / min(self.normalized_weights)))
+            ]
+            self.nproposals = len(self.weighted_proposal_list)
         self._position = 0
 
     @property
@@ -133,11 +138,8 @@ class BaseProposal(object):
         val_normalised_reflected = reflect(np.array(val_normalised))
         return minimum + width * val_normalised_reflected
 
-    def __call__(self, chain, likelihood=None, priors=None):
-        if getattr(self, "needs_likelihood_and_priors", False):
-            sample, log_factor = self.propose(chain, likelihood, priors)
-        else:
-            sample, log_factor = self.propose(chain)
+    def __call__(self, chain):
+        sample, log_factor = self.propose(chain)
         sample = self.apply_boundaries(sample)
         return sample, log_factor
 
@@ -779,7 +781,6 @@ class FixedJumpProposal(BaseProposal):
 
 
 class FisherMatrixProposal(AdaptiveGaussianProposal):
-    needs_likelihood_and_priors = True
     """Fisher Matrix Proposals
 
     Uses a finite differencing approach motivated by BayesWave (see, e.g.
@@ -806,22 +807,43 @@ class FisherMatrixProposal(AdaptiveGaussianProposal):
         self.adapt = adapt
         self.mean = np.zeros(len(self.parameters))
         self.fd_eps = fd_eps
+        self.last_ln_post = -np.inf
+        self.cholesky = None
+        self.fmp = FisherMatrixPosteriorEstimator(
+            likelihood=_sampling_convenience_dump.likelihood,
+            priors=_sampling_convenience_dump.priors,
+            parameters=self.parameters,
+            fd_eps=self.fd_eps,
+        )
 
-    def propose(self, chain, likelihood, priors):
+    def update(self, sample=None):
+        """
+        The fisher matrix only updates if the current point has a higher
+        posterior density than the last update.
+        """
+        ln_post = sample[LOGLKEY] + sample[LOGPKEY]
+        if ln_post > self.last_ln_post:
+            try:
+                ifim = self.fmp.calculate_iFIM(sample.dict)
+                self.cholesky = np.linalg.cholesky(ifim)
+            except (RuntimeError, np.linalg.LinAlgError):
+                logger.warning(f"Failed to compute Fisher matrix for {self.parameters} and {sample}")
+                raise
+            logger.info(f"Updating Fisher matrix proposal for {self.parameters}")
+            self.last_ln_post = ln_post
+            self.steps_since_update = 0
+
+    def propose(self, chain):
         sample = chain.current_sample
         if self.adapt:
             self.update_scale(chain)
-        if self.steps_since_update >= self.update_interval:
-            fmp = FisherMatrixPosteriorEstimator(
-                likelihood, priors, parameters=self.parameters, fd_eps=self.fd_eps
-            )
-            try:
-                self.iFIM = fmp.calculate_iFIM(sample.dict)
-            except RuntimeError:
-                pass
-            self.steps_since_update = 0
 
-        jump = self.scale * np.random.multivariate_normal(self.mean, self.iFIM)
+        if self.cholesky is None:
+            self.update(sample)
+        if self.steps_since_update >= self.update_interval:
+            self.update(sample)
+
+        jump = self.scale * np.dot(self.cholesky, np.random.normal(0, 1, self.ndim))
 
         for key, val in zip(self.parameters, jump):
             sample[key] += val
@@ -1222,7 +1244,9 @@ def remove_proposals_using_string(plist, string):
         FM=FisherMatrixProposal,
     )
 
+    bad_proposals = list()
     for element in string.split("no")[1:]:
         if element in mapping:
-            plist = [p for p in plist if isinstance(p, mapping[element]) is False]
-    return plist
+            bad_proposals.append(mapping[element])
+
+    return [p for p in plist if type(p) not in bad_proposals]
