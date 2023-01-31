@@ -1134,10 +1134,13 @@ class BilbyMCMCSampler(object):
             )
 
         if initial_sample_dict is not None:
-            initial_sample.update({
-                key: value for key, value in initial_sample_dict.items()
-                if key in _sampling_convenience_dump.priors.non_fixed_keys
-            })
+            initial_sample.update(
+                {
+                    key: value
+                    for key, value in initial_sample_dict.items()
+                    if key in _sampling_convenience_dump.priors.non_fixed_keys
+                }
+            )
 
         logger.info(f"Using initial sample {initial_sample}")
         initial_sample = Sample(initial_sample)

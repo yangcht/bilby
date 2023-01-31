@@ -827,8 +827,11 @@ class FisherMatrixProposal(AdaptiveGaussianProposal):
                 ifim = self.fmp.calculate_iFIM(sample.dict)
                 self.cholesky = np.linalg.cholesky(ifim)
             except (RuntimeError, np.linalg.LinAlgError):
-                logger.warning(f"Failed to compute Fisher matrix for {self.parameters} and {sample}")
-                raise
+                logger.warning(
+                    f"Failed to compute Fisher matrix for {self.parameters} and {sample}"
+                )
+                if self.cholesky is None:
+                    raise
             logger.info(f"Updating Fisher matrix proposal for {self.parameters}")
             self.last_ln_post = ln_post
             self.steps_since_update = 0
