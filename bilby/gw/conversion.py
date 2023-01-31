@@ -1,13 +1,18 @@
+"""
+A collection of functions to convert between parameters describing
+gravitational-wave sources.
+"""
+
 import os
 import sys
 import multiprocessing
 import pickle
 
 import numpy as np
-from pandas import DataFrame
+from pandas import DataFrame, Series
 
 from ..core.likelihood import MarginalizedLikelihoodReconstructionError
-from ..core.utils import logger, solar_mass, command_line_args
+from ..core.utils import logger, solar_mass, command_line_args, safe_file_dump
 from ..core.prior import DeltaFunction
 from .utils import lalsim_SimInspiralTransformPrecessingNewInitialConditions
 from .eos.eos import SpectralDecompositionEOS, EOSFamily, IntegrateTOV
@@ -24,17 +29,19 @@ def redshift_to_comoving_distance(redshift, cosmology=None):
     return cosmology.comoving_distance(redshift).value
 
 
-@np.vectorize
 def luminosity_distance_to_redshift(distance, cosmology=None):
     from astropy import units
     cosmology = get_cosmology(cosmology)
+    if isinstance(distance, Series):
+        distance = distance.values
     return z_at_value(cosmology.luminosity_distance, distance * units.Mpc)
 
 
-@np.vectorize
 def comoving_distance_to_redshift(distance, cosmology=None):
     from astropy import units
     cosmology = get_cosmology(cosmology)
+    if isinstance(distance, Series):
+        distance = distance.values
     return z_at_value(cosmology.comoving_distance, distance * units.Mpc)
 
 
@@ -50,33 +57,44 @@ def luminosity_distance_to_comoving_distance(distance, cosmology=None):
     return redshift_to_comoving_distance(redshift, cosmology)
 
 
+_cosmology_docstring = """
+Convert from {input} to {output}
+
+Parameters
+----------
+{input}: float
+    The {input} to convert.
+cosmology: astropy.cosmology.Cosmology
+    The cosmology to use for the transformation.
+    See :code:`bilby.gw.cosmology.get_cosmology` for details of how to
+    specify this.
+
+Returns
+-------
+float
+    The {output} corresponding to the provided {input}.
+"""
+
+for _func in [
+    comoving_distance_to_luminosity_distance,
+    comoving_distance_to_redshift,
+    luminosity_distance_to_comoving_distance,
+    luminosity_distance_to_redshift,
+    redshift_to_comoving_distance,
+    redshift_to_luminosity_distance,
+]:
+    input, output = _func.__name__.split("_to_")
+    _func.__doc__ = _cosmology_docstring.format(input=input, output=output)
+
+
 def bilby_to_lalsimulation_spins(
-        theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1, a_2, mass_1, mass_2,
-        reference_frequency, phase):
-    if (a_1 == 0 or tilt_1 in [0, np.pi]) and (a_2 == 0 or tilt_2 in [0, np.pi]):
-        spin_1x = 0
-        spin_1y = 0
-        spin_1z = a_1 * np.cos(tilt_1)
-        spin_2x = 0
-        spin_2y = 0
-        spin_2z = a_2 * np.cos(tilt_2)
-        iota = theta_jn
-    else:
-        iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = \
-            transform_precessing_spins(
-                theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1, a_2, mass_1,
-                mass_2, reference_frequency, phase)
-    return iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z
-
-
-@np.vectorize
-def transform_precessing_spins(theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1,
-                               a_2, mass_1, mass_2, reference_frequency, phase):
+    theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1, a_2, mass_1, mass_2,
+    reference_frequency, phase
+):
     """
-    Vectorized version of
-    lalsimulation.SimInspiralTransformPrecessingNewInitialConditions
+    Convert from Bilby spin parameters to lalsimulation ones.
 
-    All parameters are defined at the reference frequency
+    All parameters are defined at the reference frequency and in SI units.
 
     Parameters
     ==========
@@ -95,9 +113,9 @@ def transform_precessing_spins(theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1,
     a_2: float
         Secondary dimensionless spin magnitude
     mass_1: float
-        Primary mass _in SI units_
+        Primary mass in SI units
     mass_2: float
-        Secondary mass _in SI units_
+        Secondary mass in SI units
     reference_frequency: float
     phase: float
         Orbital phase
@@ -109,13 +127,40 @@ def transform_precessing_spins(theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1,
     spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z: float
         Cartesian spin components
     """
-
-    iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = (
-        lalsim_SimInspiralTransformPrecessingNewInitialConditions(
-            theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1, a_2, mass_1, mass_2,
-            reference_frequency, phase))
-
+    if (a_1 == 0 or tilt_1 in [0, np.pi]) and (a_2 == 0 or tilt_2 in [0, np.pi]):
+        spin_1x = 0
+        spin_1y = 0
+        spin_1z = a_1 * np.cos(tilt_1)
+        spin_2x = 0
+        spin_2y = 0
+        spin_2z = a_2 * np.cos(tilt_2)
+        iota = theta_jn
+    else:
+        from numbers import Number
+        args = (
+            theta_jn, phi_jl, tilt_1, tilt_2, phi_12, a_1, a_2, mass_1,
+            mass_2, reference_frequency, phase
+        )
+        float_inputs = all([isinstance(arg, Number) for arg in args])
+        if float_inputs:
+            func = lalsim_SimInspiralTransformPrecessingNewInitialConditions
+        else:
+            func = transform_precessing_spins
+        iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = func(*args)
     return iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z
+
+
+@np.vectorize
+def transform_precessing_spins(*args):
+    """
+    Vectorized wrapper for
+    lalsimulation.SimInspiralTransformPrecessingNewInitialConditions
+
+    For detailed documentation see
+    :code:`bilby.gw.conversion.bilby_to_lalsimulation_spins`.
+    This will be removed from the public API in a future release.
+    """
+    return lalsim_SimInspiralTransformPrecessingNewInitialConditions(*args)
 
 
 def convert_to_lal_binary_black_hole_parameters(parameters):
@@ -147,14 +192,14 @@ def convert_to_lal_binary_black_hole_parameters(parameters):
 
     converted_parameters = parameters.copy()
     original_keys = list(converted_parameters.keys())
-
-    if 'redshift' in converted_parameters.keys():
-        converted_parameters['luminosity_distance'] = \
-            redshift_to_luminosity_distance(parameters['redshift'])
-    elif 'comoving_distance' in converted_parameters.keys():
-        converted_parameters['luminosity_distance'] = \
-            comoving_distance_to_luminosity_distance(
-                parameters['comoving_distance'])
+    if 'luminosity_distance' not in original_keys:
+        if 'redshift' in converted_parameters.keys():
+            converted_parameters['luminosity_distance'] = \
+                redshift_to_luminosity_distance(parameters['redshift'])
+        elif 'comoving_distance' in converted_parameters.keys():
+            converted_parameters['luminosity_distance'] = \
+                comoving_distance_to_luminosity_distance(
+                    parameters['comoving_distance'])
 
     for key in original_keys:
         if key[-7:] == '_source':
@@ -165,67 +210,8 @@ def convert_to_lal_binary_black_hole_parameters(parameters):
             converted_parameters[key[:-7]] = converted_parameters[key] * (
                 1 + converted_parameters['redshift'])
 
-    if 'chirp_mass' in converted_parameters.keys():
-        if "mass_1" in converted_parameters.keys():
-            converted_parameters["mass_ratio"] = chirp_mass_and_primary_mass_to_mass_ratio(
-                converted_parameters["chirp_mass"], converted_parameters["mass_1"])
-        if 'total_mass' in converted_parameters.keys():
-            converted_parameters['symmetric_mass_ratio'] =\
-                chirp_mass_and_total_mass_to_symmetric_mass_ratio(
-                    converted_parameters['chirp_mass'],
-                    converted_parameters['total_mass'])
-        if 'symmetric_mass_ratio' in converted_parameters.keys() and "mass_ratio" not in converted_parameters:
-            converted_parameters['mass_ratio'] =\
-                symmetric_mass_ratio_to_mass_ratio(
-                    converted_parameters['symmetric_mass_ratio'])
-        if 'total_mass' not in converted_parameters.keys():
-            converted_parameters['total_mass'] =\
-                chirp_mass_and_mass_ratio_to_total_mass(
-                    converted_parameters['chirp_mass'],
-                    converted_parameters['mass_ratio'])
-        converted_parameters['mass_1'], converted_parameters['mass_2'] = \
-            total_mass_and_mass_ratio_to_component_masses(
-                converted_parameters['mass_ratio'],
-                converted_parameters['total_mass'])
-    elif 'total_mass' in converted_parameters.keys():
-        if 'symmetric_mass_ratio' in converted_parameters.keys():
-            converted_parameters['mass_ratio'] = \
-                symmetric_mass_ratio_to_mass_ratio(
-                    converted_parameters['symmetric_mass_ratio'])
-        if 'mass_ratio' in converted_parameters.keys():
-            converted_parameters['mass_1'], converted_parameters['mass_2'] =\
-                total_mass_and_mass_ratio_to_component_masses(
-                    converted_parameters['mass_ratio'],
-                    converted_parameters['total_mass'])
-        elif 'mass_1' in converted_parameters.keys():
-            converted_parameters['mass_2'] =\
-                converted_parameters['total_mass'] -\
-                converted_parameters['mass_1']
-        elif 'mass_2' in converted_parameters.keys():
-            converted_parameters['mass_1'] = \
-                converted_parameters['total_mass'] - \
-                converted_parameters['mass_2']
-    elif 'symmetric_mass_ratio' in converted_parameters.keys():
-        converted_parameters['mass_ratio'] =\
-            symmetric_mass_ratio_to_mass_ratio(
-                converted_parameters['symmetric_mass_ratio'])
-        if 'mass_1' in converted_parameters.keys():
-            converted_parameters['mass_2'] =\
-                converted_parameters['mass_1'] *\
-                converted_parameters['mass_ratio']
-        elif 'mass_2' in converted_parameters.keys():
-            converted_parameters['mass_1'] =\
-                converted_parameters['mass_2'] /\
-                converted_parameters['mass_ratio']
-    elif 'mass_ratio' in converted_parameters.keys():
-        if 'mass_1' in converted_parameters.keys():
-            converted_parameters['mass_2'] =\
-                converted_parameters['mass_1'] *\
-                converted_parameters['mass_ratio']
-        if 'mass_2' in converted_parameters.keys():
-            converted_parameters['mass_1'] = \
-                converted_parameters['mass_2'] /\
-                converted_parameters['mass_ratio']
+    # we do not require the component masses be added if no mass parameters are present
+    converted_parameters = generate_component_masses(converted_parameters, require_add=False)
 
     for idx in ['1', '2']:
         key = 'chi_{}'.format(idx)
@@ -435,6 +421,33 @@ def total_mass_and_mass_ratio_to_component_masses(mass_ratio, total_mass):
     return mass_1, mass_2
 
 
+def chirp_mass_and_mass_ratio_to_component_masses(chirp_mass, mass_ratio):
+    """
+    Convert total mass and mass ratio of a binary to its component masses.
+
+    Parameters
+    ==========
+    chirp_mass: float
+        Chirp mass of the binary
+    mass_ratio: float
+        Mass ratio (mass_2/mass_1) of the binary
+
+    Returns
+    =======
+    mass_1: float
+        Mass of the heavier object
+    mass_2: float
+        Mass of the lighter object
+    """
+    total_mass = chirp_mass_and_mass_ratio_to_total_mass(chirp_mass=chirp_mass,
+                                                         mass_ratio=mass_ratio)
+    mass_1, mass_2 = (
+        total_mass_and_mass_ratio_to_component_masses(
+            total_mass=total_mass, mass_ratio=mass_ratio)
+    )
+    return mass_1, mass_2
+
+
 def symmetric_mass_ratio_to_mass_ratio(symmetric_mass_ratio):
     """
     Convert the symmetric mass ratio to the normal mass ratio.
@@ -517,8 +530,10 @@ def chirp_mass_and_mass_ratio_to_total_mass(chirp_mass, mass_ratio):
 
     Returns
     =======
-    total_mass: float
-        Total mass of the binary
+    mass_1: float
+        Mass of the heavier object
+    mass_2: float
+        Mass of the lighter object
     """
 
     with np.errstate(invalid="ignore"):
@@ -582,7 +597,7 @@ def component_masses_to_symmetric_mass_ratio(mass_1, mass_2):
         Symmetric mass ratio of the binary
     """
 
-    return (mass_1 * mass_2) / (mass_1 + mass_2) ** 2
+    return np.minimum((mass_1 * mass_2) / (mass_1 + mass_2) ** 2, 1 / 4)
 
 
 def component_masses_to_mass_ratio(mass_1, mass_2):
@@ -629,6 +644,30 @@ def mass_1_and_chirp_mass_to_mass_ratio(mass_1, chirp_mass):
                  ((3 ** 0.5 * (27 * temp ** 2 - 4 * temp ** 3) ** 0.5 +
                    9 * temp) / (2 * 3 ** 2)) ** (1 / 3)
     return mass_ratio
+
+
+def mass_2_and_chirp_mass_to_mass_ratio(mass_2, chirp_mass):
+    """
+    Calculate mass ratio from mass_1 and chirp_mass.
+
+    This involves solving mc = m2 * (1/q)**(3/5) / (1 + (1/q))**(1/5).
+
+    Parameters
+    ==========
+    mass_2: float
+        Mass of the lighter object
+    chirp_mass: float
+        Chirp mass of the binary
+
+    Returns
+    =======
+    mass_ratio: float
+        Mass ratio of the binary
+    """
+    # Passing mass_2, the expression from the function above
+    # returns 1/q (because chirp mass is invariant under
+    # mass_1 <-> mass_2)
+    return 1 / mass_1_and_chirp_mass_to_mass_ratio(mass_2, chirp_mass)
 
 
 def lambda_1_lambda_2_to_lambda_tilde(lambda_1, lambda_2, mass_1, mass_2):
@@ -791,12 +830,11 @@ def _generate_all_cbc_parameters(sample, defaults, base_conversion,
     output_sample = fill_from_fixed_priors(output_sample, priors)
     output_sample, _ = base_conversion(output_sample)
     if likelihood is not None:
-        if (
-                hasattr(likelihood, 'phase_marginalization') or
-                hasattr(likelihood, 'time_marginalization') or
-                hasattr(likelihood, 'distance_marginalization') or
-                hasattr(likelihood, 'calibration_marginalization')
-        ):
+        compute_per_detector_log_likelihoods(
+            samples=output_sample, likelihood=likelihood, npool=npool)
+
+        marginalized_parameters = getattr(likelihood, "_marginalized_parameters", list())
+        if len(marginalized_parameters) > 0:
             try:
                 generate_posterior_samples_from_marginalized_likelihood(
                     samples=output_sample, likelihood=likelihood, npool=npool)
@@ -807,11 +845,18 @@ def _generate_all_cbc_parameters(sample, defaults, base_conversion,
                     "interpretation.".format(e)
                 )
         if priors is not None:
-            for par, name in zip(
-                    ['distance', 'phase', 'time'],
-                    ['luminosity_distance', 'phase', 'geocent_time']):
-                if getattr(likelihood, '{}_marginalization'.format(par), False):
-                    priors[name] = likelihood.priors[name]
+            misnamed_marginalizations = dict(
+                luminosity_distance="distance",
+                geocent_time="time",
+                recalib_index="calibration",
+            )
+            for par in marginalized_parameters:
+                name = misnamed_marginalizations.get(par, par)
+                if (
+                    getattr(likelihood, f'{name}_marginalization', False)
+                    and par in likelihood.priors
+                ):
+                    priors[par] = likelihood.priors[par]
 
         if (
             not getattr(likelihood, "reference_frame", "sky") == "sky"
@@ -904,6 +949,29 @@ def generate_all_bns_parameters(sample, likelihood=None, priors=None, npool=1):
 
 
 def generate_specific_parameters(sample, parameters):
+    """
+    Generate a specific subset of parameters that can be generated.
+
+    Parameters
+    ----------
+    sample: dict
+        The input sample to be converted.
+    parameters: list
+        The list of parameters to return.
+
+    Returns
+    -------
+    output_sample: dict
+        The converted parameters
+
+    Notes
+    -----
+    This is _not_ an optimized function. Under the hood, it generates all
+    possible parameters and then downselects.
+
+    If the passed :code:`parameters` do not include the input parameters,
+    those will not be returned.
+    """
     updated_sample = generate_all_bns_parameters(sample=sample.copy())
     output_sample = sample.__class__()
     for key in parameters:
@@ -936,33 +1004,228 @@ def fill_from_fixed_priors(sample, priors):
     return output_sample
 
 
-def generate_mass_parameters(sample):
-    """
-    Add the known mass parameters to the data frame/dictionary.
-
+def generate_component_masses(sample, require_add=False, source=False):
+    """"
+    Add the component masses to the dataframe/dictionary
     We add:
-        chirp mass, total mass, symmetric mass ratio, mass ratio
+        mass_1, mass_2
+    Or if source=True
+        mass_1_source, mass_2_source
+    We also add any other masses which may be necessary for
+    intermediate steps, i.e. typically the  total mass is necessary, along
+    with the mass ratio, so these will usually be added to the dictionary
+
+    If `require_add` is True, then having an incomplete set of mass
+    parameters (so that the component mass parameters cannot be added)
+    will throw an error, otherwise it will quietly add nothing to the
+    dictionary.
+
+    Parameters
+    =========
+    sample : dict
+        The input dictionary with at least one
+        component with overall mass scaling (i.e.
+        chirp_mass, mass_1, mass_2, total_mass) and
+        then any other mass parameter.
+    source : bool, default False
+        If True, then perform the conversions for source mass parameters
+        i.e. mass_1_source instead of mass_1
+
+    Returns
+    dict : the updated dictionary
+    """
+    def check_and_return_quietly(require_add, sample):
+        if require_add:
+            raise KeyError("Insufficient mass parameters in input dictionary")
+        else:
+            return sample
+    output_sample = sample.copy()
+
+    if source:
+        mass_1_key = "mass_1_source"
+        mass_2_key = "mass_2_source"
+        total_mass_key = "total_mass_source"
+        chirp_mass_key = "chirp_mass_source"
+    else:
+        mass_1_key = "mass_1"
+        mass_2_key = "mass_2"
+        total_mass_key = "total_mass"
+        chirp_mass_key = "chirp_mass"
+
+    if mass_1_key in sample.keys():
+        if mass_2_key in sample.keys():
+            return output_sample
+        if total_mass_key in sample.keys():
+            output_sample[mass_2_key] = output_sample[total_mass_key] - (
+                output_sample[mass_1_key]
+            )
+            return output_sample
+
+        elif "mass_ratio" in sample.keys():
+            pass
+        elif "symmetric_mass_ratio" in sample.keys():
+            output_sample["mass_ratio"] = (
+                symmetric_mass_ratio_to_mass_ratio(
+                    output_sample["symmetric_mass_ratio"])
+            )
+        elif chirp_mass_key in sample.keys():
+            output_sample["mass_ratio"] = (
+                mass_1_and_chirp_mass_to_mass_ratio(
+                    mass_1=output_sample[mass_1_key],
+                    chirp_mass=output_sample[chirp_mass_key])
+            )
+        else:
+            return check_and_return_quietly(require_add, sample)
+
+        output_sample[mass_2_key] = (
+            output_sample["mass_ratio"] * output_sample[mass_1_key]
+        )
+
+        return output_sample
+
+    elif mass_2_key in sample.keys():
+        # mass_1 is not in the dict
+        if total_mass_key in sample.keys():
+            output_sample[mass_1_key] = (
+                output_sample[total_mass_key] - output_sample[mass_2_key]
+            )
+            return output_sample
+        elif "mass_ratio" in sample.keys():
+            pass
+        elif "symmetric_mass_ratio" in sample.keys():
+            output_sample["mass_ratio"] = (
+                symmetric_mass_ratio_to_mass_ratio(
+                    output_sample["symmetric_mass_ratio"])
+            )
+        elif chirp_mass_key in sample.keys():
+            output_sample["mass_ratio"] = (
+                mass_2_and_chirp_mass_to_mass_ratio(
+                    mass_2=output_sample[mass_2_key],
+                    chirp_mass=output_sample[chirp_mass_key])
+            )
+        else:
+            check_and_return_quietly(require_add, sample)
+
+        output_sample[mass_1_key] = 1 / output_sample["mass_ratio"] * (
+            output_sample[mass_2_key]
+        )
+
+        return output_sample
+
+    # Only if neither mass_1 or mass_2 is in the input sample
+    if total_mass_key in sample.keys():
+        if "mass_ratio" in sample.keys():
+            pass  # We have everything we need already
+        elif "symmetric_mass_ratio" in sample.keys():
+            output_sample["mass_ratio"] = (
+                symmetric_mass_ratio_to_mass_ratio(
+                    output_sample["symmetric_mass_ratio"])
+            )
+        elif chirp_mass_key in sample.keys():
+            output_sample["symmetric_mass_ratio"] = (
+                chirp_mass_and_total_mass_to_symmetric_mass_ratio(
+                    chirp_mass=output_sample[chirp_mass_key],
+                    total_mass=output_sample[total_mass_key])
+            )
+            output_sample["mass_ratio"] = (
+                symmetric_mass_ratio_to_mass_ratio(
+                    output_sample["symmetric_mass_ratio"])
+            )
+        else:
+            return check_and_return_quietly(require_add, sample)
+
+    elif chirp_mass_key in sample.keys():
+        if "mass_ratio" in sample.keys():
+            pass
+        elif "symmetric_mass_ratio" in sample.keys():
+            output_sample["mass_ratio"] = (
+                symmetric_mass_ratio_to_mass_ratio(
+                    sample["symmetric_mass_ratio"])
+            )
+        else:
+            return check_and_return_quietly(require_add, sample)
+
+        output_sample[total_mass_key] = (
+            chirp_mass_and_mass_ratio_to_total_mass(
+                chirp_mass=output_sample[chirp_mass_key],
+                mass_ratio=output_sample["mass_ratio"])
+        )
+
+    # We haven't matched any of the criteria
+    if total_mass_key not in output_sample.keys() or (
+            "mass_ratio" not in output_sample.keys()):
+        return check_and_return_quietly(require_add, sample)
+    mass_1, mass_2 = (
+        total_mass_and_mass_ratio_to_component_masses(
+            total_mass=output_sample[total_mass_key],
+            mass_ratio=output_sample["mass_ratio"])
+    )
+    output_sample[mass_1_key] = mass_1
+    output_sample[mass_2_key] = mass_2
+
+    return output_sample
+
+
+def generate_mass_parameters(sample, source=False):
+    """
+    Add the known mass parameters to the data frame/dictionary.  We do
+    not recompute keys already present in the dictionary
+
+    We add, potentially:
+        chirp_mass, total_mass, symmetric_mass_ratio, mass_ratio, mass_1, mass_2
+    Or if source=True:
+        chirp_mass_source, total_mass_source, symmetric_mass_ratio, mass_ratio, mass_1_source, mass_2_source
 
     Parameters
     ==========
     sample : dict
-        The input dictionary with component masses 'mass_1' and 'mass_2'
+        The input dictionary with two "spanning" mass parameters
+        e.g. (mass_1, mass_2), or (chirp_mass, mass_ratio), but not e.g. only
+        (mass_ratio, symmetric_mass_ratio)
+    source : bool, default False
+        If True, then perform the conversions for source mass parameters
+        i.e. mass_1_source instead of mass_1
 
     Returns
     =======
     dict: The updated dictionary
 
     """
-    output_sample = sample.copy()
-    output_sample['chirp_mass'] =\
-        component_masses_to_chirp_mass(sample['mass_1'], sample['mass_2'])
-    output_sample['total_mass'] =\
-        component_masses_to_total_mass(sample['mass_1'], sample['mass_2'])
-    output_sample['symmetric_mass_ratio'] =\
-        component_masses_to_symmetric_mass_ratio(sample['mass_1'],
-                                                 sample['mass_2'])
-    output_sample['mass_ratio'] =\
-        component_masses_to_mass_ratio(sample['mass_1'], sample['mass_2'])
+    # Only add the parameters if they're not already present
+    intermediate_sample = generate_component_masses(sample, source=source)
+    output_sample = intermediate_sample.copy()
+
+    if source:
+        mass_1_key = 'mass_1_source'
+        mass_2_key = 'mass_2_source'
+        total_mass_key = 'total_mass_source'
+        chirp_mass_key = 'chirp_mass_source'
+    else:
+        mass_1_key = 'mass_1'
+        mass_2_key = 'mass_2'
+        total_mass_key = 'total_mass'
+        chirp_mass_key = 'chirp_mass'
+
+    if chirp_mass_key not in output_sample.keys():
+        output_sample[chirp_mass_key] = (
+            component_masses_to_chirp_mass(output_sample[mass_1_key],
+                                           output_sample[mass_2_key])
+        )
+    if total_mass_key not in output_sample.keys():
+        output_sample[total_mass_key] = (
+            component_masses_to_total_mass(output_sample[mass_1_key],
+                                           output_sample[mass_2_key])
+        )
+    if 'symmetric_mass_ratio' not in output_sample.keys():
+        output_sample['symmetric_mass_ratio'] = (
+            component_masses_to_symmetric_mass_ratio(output_sample[mass_1_key],
+                                                     output_sample[mass_2_key])
+        )
+    if 'mass_ratio' not in output_sample.keys():
+        output_sample['mass_ratio'] = (
+            component_masses_to_mass_ratio(output_sample[mass_1_key],
+                                           output_sample[mass_2_key])
+        )
 
     return output_sample
 
@@ -1143,12 +1406,10 @@ def compute_snrs(sample, likelihood, npool=1):
     """
     if likelihood is not None:
         if isinstance(sample, dict):
-            signal_polarizations =\
-                likelihood.waveform_generator.frequency_domain_strain(sample)
             likelihood.parameters.update(sample)
+            signal_polarizations = likelihood.waveform_generator.frequency_domain_strain(likelihood.parameters.copy())
             for ifo in likelihood.interferometers:
-                per_detector_snr = likelihood.calculate_snrs(
-                    signal_polarizations, ifo)
+                per_detector_snr = likelihood.calculate_snrs(signal_polarizations, ifo)
                 sample['{}_matched_filter_snr'.format(ifo.name)] =\
                     per_detector_snr.complex_matched_filter_snr
                 sample['{}_optimal_snr'.format(ifo.name)] = \
@@ -1157,9 +1418,14 @@ def compute_snrs(sample, likelihood, npool=1):
             from tqdm.auto import tqdm
             logger.info('Computing SNRs for every sample.')
 
-            fill_args = [(ii, row, likelihood) for ii, row in sample.iterrows()]
+            fill_args = [(ii, row) for ii, row in sample.iterrows()]
             if npool > 1:
-                pool = multiprocessing.Pool(processes=npool)
+                from ..core.sampler.base_sampler import _initialize_global_variables
+                pool = multiprocessing.Pool(
+                    processes=npool,
+                    initializer=_initialize_global_variables,
+                    initargs=(likelihood, None, None, False),
+                )
                 logger.info(
                     "Using a pool with size {} for nsamples={}".format(npool, len(sample))
                 )
@@ -1167,6 +1433,8 @@ def compute_snrs(sample, likelihood, npool=1):
                 pool.close()
                 pool.join()
             else:
+                from ..core.sampler.base_sampler import _sampling_convenience_dump
+                _sampling_convenience_dump.likelihood = likelihood
                 new_samples = [_compute_snrs(xx) for xx in tqdm(fill_args, file=sys.stdout)]
 
             for ii, ifo in enumerate(likelihood.interferometers):
@@ -1187,16 +1455,129 @@ def compute_snrs(sample, likelihood, npool=1):
 
 def _compute_snrs(args):
     """A wrapper of computing the SNRs to enable multiprocessing"""
-    ii, sample, likelihood = args
+    from ..core.sampler.base_sampler import _sampling_convenience_dump
+    likelihood = _sampling_convenience_dump.likelihood
+    ii, sample = args
     sample = dict(sample).copy()
-    signal_polarizations = likelihood.waveform_generator.frequency_domain_strain(
-        sample
-    )
     likelihood.parameters.update(sample)
+    signal_polarizations = likelihood.waveform_generator.frequency_domain_strain(
+        likelihood.parameters.copy()
+    )
     snrs = list()
     for ifo in likelihood.interferometers:
         snrs.append(likelihood.calculate_snrs(signal_polarizations, ifo))
     return snrs
+
+
+def compute_per_detector_log_likelihoods(samples, likelihood, npool=1, block=10):
+    """
+    Calculate the log likelihoods in each detector.
+
+    Parameters
+    ==========
+    samples: DataFrame
+        Posterior from run with a marginalised likelihood.
+    likelihood: bilby.gw.likelihood.GravitationalWaveTransient
+        Likelihood used during sampling.
+    npool: int, (default=1)
+        If given, perform generation (where possible) using a multiprocessing pool
+    block: int, (default=10)
+        Size of the blocks to use in multiprocessing
+
+    Returns
+    =======
+    sample: DataFrame
+        Returns the posterior with new samples.
+    """
+    if likelihood is not None:
+        if not callable(likelihood.compute_per_detector_log_likelihood):
+            logger.debug('Not computing per-detector log likelihoods.')
+            return samples
+
+        if isinstance(samples, dict):
+            likelihood.parameters.update(samples)
+            samples = likelihood.compute_per_detector_log_likelihood()
+            return samples
+
+        elif not isinstance(samples, DataFrame):
+            raise ValueError("Unable to handle input samples of type {}".format(type(samples)))
+        from tqdm.auto import tqdm
+
+        logger.info('Computing per-detector log likelihoods.')
+
+        # Initialize cache dict
+        cached_samples_dict = dict()
+
+        # Store samples to convert for checking
+        cached_samples_dict["_samples"] = samples
+
+        # Set up the multiprocessing
+        if npool > 1:
+            from ..core.sampler.base_sampler import _initialize_global_variables
+            pool = multiprocessing.Pool(
+                processes=npool,
+                initializer=_initialize_global_variables,
+                initargs=(likelihood, None, None, False),
+            )
+            logger.info(
+                "Using a pool with size {} for nsamples={}"
+                .format(npool, len(samples))
+            )
+        else:
+            from ..core.sampler.base_sampler import _sampling_convenience_dump
+            _sampling_convenience_dump.likelihood = likelihood
+            pool = None
+
+        fill_args = [(ii, row) for ii, row in samples.iterrows()]
+        ii = 0
+        pbar = tqdm(total=len(samples), file=sys.stdout)
+        while ii < len(samples):
+            if ii in cached_samples_dict:
+                ii += block
+                pbar.update(block)
+                continue
+
+            if pool is not None:
+                subset_samples = pool.map(_compute_per_detector_log_likelihoods,
+                                          fill_args[ii: ii + block])
+            else:
+                subset_samples = [list(_compute_per_detector_log_likelihoods(xx))
+                                  for xx in fill_args[ii: ii + block]]
+
+            cached_samples_dict[ii] = subset_samples
+
+            ii += block
+            pbar.update(len(subset_samples))
+        pbar.close()
+
+        if pool is not None:
+            pool.close()
+            pool.join()
+
+        new_samples = np.concatenate(
+            [np.array(val) for key, val in cached_samples_dict.items() if key != "_samples"]
+        )
+
+        for ii, key in \
+                enumerate([f'{ifo.name}_log_likelihood' for ifo in likelihood.interferometers]):
+            samples[key] = new_samples[:, ii]
+
+        return samples
+
+    else:
+        logger.debug('Not computing per-detector log likelihoods.')
+
+
+def _compute_per_detector_log_likelihoods(args):
+    """A wrapper of computing the per-detector log likelihoods to enable multiprocessing"""
+    from ..core.sampler.base_sampler import _sampling_convenience_dump
+    likelihood = _sampling_convenience_dump.likelihood
+    ii, sample = args
+    sample = dict(sample).copy()
+    likelihood.parameters.update(dict(sample).copy())
+    new_sample = likelihood.compute_per_detector_log_likelihood()
+    return tuple((new_sample[key] for key in
+                  [f'{ifo.name}_log_likelihood' for ifo in likelihood.interferometers]))
 
 
 def generate_posterior_samples_from_marginalized_likelihood(
@@ -1226,10 +1607,8 @@ def generate_posterior_samples_from_marginalized_likelihood(
     sample: DataFrame
         Returns the posterior with new samples.
     """
-    if not any([likelihood.phase_marginalization,
-                likelihood.distance_marginalization,
-                likelihood.time_marginalization,
-                likelihood.calibration_marginalization]):
+    marginalized_parameters = getattr(likelihood, "_marginalized_parameters", list())
+    if len(marginalized_parameters) == 0:
         return samples
 
     # pass through a dictionary
@@ -1248,11 +1627,15 @@ def generate_posterior_samples_from_marginalized_likelihood(
         use_cache = False
 
     if use_cache and os.path.exists(cache_filename) and not command_line_args.clean:
-        with open(cache_filename, "rb") as f:
-            cached_samples_dict = pickle.load(f)
+        try:
+            with open(cache_filename, "rb") as f:
+                cached_samples_dict = pickle.load(f)
+        except EOFError:
+            logger.warning("Cache file is empty")
+            cached_samples_dict = None
 
         # Check the samples are identical between the cache and current
-        if cached_samples_dict["_samples"].equals(samples):
+        if (cached_samples_dict is not None) and (cached_samples_dict["_samples"].equals(samples)):
             # Calculate reconstruction percentage and print a log message
             nsamples_converted = np.sum(
                 [len(val) for key, val in cached_samples_dict.items() if key != "_samples"]
@@ -1272,15 +1655,22 @@ def generate_posterior_samples_from_marginalized_likelihood(
 
     # Set up the multiprocessing
     if npool > 1:
-        pool = multiprocessing.Pool(processes=npool)
+        from ..core.sampler.base_sampler import _initialize_global_variables
+        pool = multiprocessing.Pool(
+            processes=npool,
+            initializer=_initialize_global_variables,
+            initargs=(likelihood, None, None, False),
+        )
         logger.info(
             "Using a pool with size {} for nsamples={}"
             .format(npool, len(samples))
         )
     else:
+        from ..core.sampler.base_sampler import _sampling_convenience_dump
+        _sampling_convenience_dump.likelihood = likelihood
         pool = None
 
-    fill_args = [(ii, row, likelihood) for ii, row in samples.iterrows()]
+    fill_args = [(ii, row) for ii, row in samples.iterrows()]
     ii = 0
     pbar = tqdm(total=len(samples), file=sys.stdout)
     while ii < len(samples):
@@ -1297,8 +1687,7 @@ def generate_posterior_samples_from_marginalized_likelihood(
         cached_samples_dict[ii] = subset_samples
 
         if use_cache:
-            with open(cache_filename, "wb") as f:
-                pickle.dump(cached_samples_dict, f)
+            safe_file_dump(cached_samples_dict, cache_filename, "pickle")
 
         ii += block
         pbar.update(len(subset_samples))
@@ -1312,11 +1701,8 @@ def generate_posterior_samples_from_marginalized_likelihood(
         [np.array(val) for key, val in cached_samples_dict.items() if key != "_samples"]
     )
 
-    samples['geocent_time'] = new_samples[:, 0]
-    samples['luminosity_distance'] = new_samples[:, 1]
-    samples['phase'] = new_samples[:, 2]
-    if likelihood.calibration_marginalization:
-        samples['recalib_index'] = new_samples[:, 3]
+    for ii, key in enumerate(marginalized_parameters):
+        samples[key] = new_samples[:, ii]
 
     return samples
 
@@ -1342,14 +1728,11 @@ def generate_sky_frame_parameters(samples, likelihood):
 
 
 def fill_sample(args):
-    ii, sample, likelihood = args
+    from ..core.sampler.base_sampler import _sampling_convenience_dump
+    likelihood = _sampling_convenience_dump.likelihood
+    ii, sample = args
+    marginalized_parameters = getattr(likelihood, "_marginalized_parameters", list())
     sample = dict(sample).copy()
     likelihood.parameters.update(dict(sample).copy())
     new_sample = likelihood.generate_posterior_sample_from_marginalized_likelihood()
-
-    if not likelihood.calibration_marginalization:
-        return new_sample["geocent_time"], new_sample["luminosity_distance"],\
-            new_sample["phase"]
-    else:
-        return new_sample["geocent_time"], new_sample["luminosity_distance"],\
-            new_sample["phase"], new_sample['recalib_index']
+    return tuple((new_sample[key] for key in marginalized_parameters))

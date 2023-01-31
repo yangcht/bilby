@@ -22,6 +22,7 @@ from .utils import (
     recursively_save_dict_contents_to_group,
     recursively_load_dict_contents_from_group,
     recursively_decode_bilby_json,
+    safe_file_dump,
 )
 from .prior import Prior, PriorDict, DeltaFunction, ConditionalDeltaFunction
 
@@ -298,7 +299,7 @@ def reweight(result, label=None, new_likelihood=None, new_prior=None,
 
     if conversion_function is not None:
         data_frame = result.posterior
-        if "npool" in inspect.getargspec(conversion_function).args:
+        if "npool" in inspect.signature(conversion_function).parameters:
             data_frame = conversion_function(data_frame, new_likelihood, new_prior, npool=npool)
         else:
             data_frame = conversion_function(data_frame, new_likelihood, new_prior)
@@ -735,16 +736,12 @@ class Result(object):
                 with h5py.File(filename, 'w') as h5file:
                     recursively_save_dict_contents_to_group(h5file, '/', dictionary)
             elif extension == 'pkl':
-                import dill
-                with open(filename, "wb") as ff:
-                    dill.dump(self, ff)
+                safe_file_dump(self, filename, "dill")
             else:
                 raise ValueError("Extension type {} not understood".format(extension))
         except Exception as e:
-            import dill
             filename = ".".join(filename.split(".")[:-1]) + ".pkl"
-            with open(filename, "wb") as ff:
-                dill.dump(self, ff)
+            safe_file_dump(self, filename, "dill")
             logger.error(
                 "\n\nSaving the data has failed with the following message:\n"
                 "{}\nData has been dumped to {}.\n\n".format(e, filename)
@@ -1389,7 +1386,7 @@ class Result(object):
             data_frame['log_prior'] = self.log_prior_evaluations
 
         if conversion_function is not None:
-            if "npool" in inspect.getargspec(conversion_function).args:
+            if "npool" in inspect.signature(conversion_function).parameters:
                 data_frame = conversion_function(data_frame, likelihood, priors, npool=npool)
             else:
                 data_frame = conversion_function(data_frame, likelihood, priors)
@@ -1435,8 +1432,11 @@ class Result(object):
         if keys is None:
             keys = self.search_parameter_keys
         if self.injection_parameters is None:
-            raise(TypeError, "Result object has no 'injection_parameters'. "
-                             "Cannot compute credible levels.")
+            raise (
+                TypeError,
+                "Result object has no 'injection_parameters'. "
+                "Cannot compute credible levels."
+            )
         credible_levels = {key: self.get_injection_credible_level(key, weights=weights)
                            for key in keys
                            if isinstance(self.injection_parameters.get(key, None), float)}
@@ -1462,8 +1462,11 @@ class Result(object):
         float: credible level
         """
         if self.injection_parameters is None:
-            raise(TypeError, "Result object has no 'injection_parameters'. "
-                             "Cannot copmute credible levels.")
+            raise (
+                TypeError,
+                "Result object has no 'injection_parameters'. "
+                "Cannot copmute credible levels."
+            )
 
         if weights is None:
             weights = np.ones(len(self.posterior))
@@ -1704,11 +1707,28 @@ class ResultList(list):
         else:
             raise TypeError("Could not append a non-Result type")
 
-    def combine(self, shuffle=False):
+    def combine(self, shuffle=False, consistency_level="error"):
         """
         Return the combined results in a :class:bilby.core.result.Result`
         object.
+
+        Parameters
+        ----------
+        shuffle: bool
+            If true, shuffle the samples when combining, otherwise they are concatenated.
+        consistency_level: str, [warning, error]
+            If warning, print a warning if inconsistencies are discovered between the results before combining.
+            If error, raise an error if inconsistencies are discovered between the results before combining.
+
+        Returns
+        -------
+        result: bilby.core.result.Result
+            The combined result file
+
         """
+
+        self.consistency_level = consistency_level
+
         if len(self) == 0:
             return Result()
         elif len(self) == 1:
@@ -1838,24 +1858,41 @@ class ResultList(list):
             except ValueError:
                 raise ResultListError("Not all results contain nested samples")
 
+    def _error_or_warning_consistency(self, msg):
+        if self.consistency_level == "error":
+            raise ResultListError(msg)
+        elif self.consistency_level == "warning":
+            logger.warning(msg)
+        else:
+            raise ValueError(f"Input consistency_level {self.consistency_level} not understood")
+
     def check_consistent_priors(self):
         for res in self:
             for p in self[0].priors.keys():
                 if not self[0].priors[p] == res.priors[p] or len(self[0].priors) != len(res.priors):
-                    raise ResultListError("Inconsistent priors between results")
+                    msg = "Inconsistent priors between results"
+                    self._error_or_warning_consistency(msg)
 
     def check_consistent_parameters(self):
         if not np.all([set(self[0].search_parameter_keys) == set(res.search_parameter_keys) for res in self]):
-            raise ResultListError("Inconsistent parameters between results")
+            msg = "Inconsistent parameters between results"
+            self._error_or_warning_consistency(msg)
 
     def check_consistent_data(self):
-        if not np.all([res.log_noise_evidence == self[0].log_noise_evidence for res in self])\
-                and not np.all([np.isnan(res.log_noise_evidence) for res in self]):
-            raise ResultListError("Inconsistent data between results")
+        if not np.allclose(
+            [res.log_noise_evidence for res in self],
+            self[0].log_noise_evidence,
+            atol=1e-8,
+            rtol=0.0,
+            equal_nan=True,
+        ):
+            msg = "Inconsistent data between results"
+            self._error_or_warning_consistency(msg)
 
     def check_consistent_sampler(self):
         if not np.all([res.sampler == self[0].sampler for res in self]):
-            raise ResultListError("Inconsistent samplers between results")
+            msg = "Inconsistent samplers between results"
+            self._error_or_warning_consistency(msg)
 
 
 @latex_plot_format
@@ -1933,12 +1970,17 @@ def plot_multiple(results, filename=None, labels=None, colours=None,
 
     if evidences:
         if np.isnan(results[0].log_bayes_factor):
-            template = r' $\mathrm{{ln}}(Z)={lnz:1.3g}$'
+            template = r'{label} $\mathrm{{ln}}(Z)={lnz:1.3g}$'
         else:
-            template = r' $\mathrm{{ln}}(B)={lnbf:1.3g}$'
-        labels = [template.format(lnz=result.log_evidence,
-                                  lnbf=result.log_bayes_factor)
-                  for ii, result in enumerate(results)]
+            template = r'{label} $\mathrm{{ln}}(B)={lnbf:1.3g}$'
+        labels = [
+            template.format(
+                label=label,
+                lnz=result.log_evidence,
+                lnbf=result.log_bayes_factor,
+            )
+            for label, result in zip(labels, results)
+        ]
 
     axes = fig.get_axes()
     ndim = int(np.sqrt(len(axes)))
@@ -1977,6 +2019,8 @@ def make_pp_plot(results, filename=None, save=True, confidence_interval=[0.68, 0
         The font size for the legend
     keys: list
         A list of keys to use, if None defaults to search_parameter_keys
+    title: bool
+        Whether to add the number of results and total p-value as a plot title
     confidence_interval_alpha: float, list, optional
         The transparency for the background condifence interval
     weight_list: list, optional
@@ -1998,11 +2042,12 @@ def make_pp_plot(results, filename=None, save=True, confidence_interval=[0.68, 0
     if weight_list is None:
         weight_list = [None] * len(results)
 
-    credible_levels = pd.DataFrame()
+    credible_levels = list()
     for i, result in enumerate(results):
-        credible_levels = credible_levels.append(
-            result.get_all_injection_credible_levels(keys, weights=weight_list[i]),
-            ignore_index=True)
+        credible_levels.append(
+            result.get_all_injection_credible_levels(keys, weights=weight_list[i])
+        )
+    credible_levels = pd.DataFrame(credible_levels)
 
     if lines is None:
         colors = ["C{}".format(i) for i in range(8)]

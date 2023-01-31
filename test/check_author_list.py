@@ -3,7 +3,7 @@
 import re
 import subprocess
 
-special_cases = ["plasky", "thomas", "mj-will"]
+special_cases = ["plasky", "thomas", "mj-will", "richard"]
 AUTHORS_list = []
 with open("AUTHORS.md", "r") as f:
     AUTHORS_list = " ".join([line for line in f]).lower()
@@ -26,7 +26,7 @@ def remove_accents(raw_text):
     raw_text = re.sub(u"[ß]", 'ss', raw_text)
     raw_text = re.sub(u"[ñ]", 'n', raw_text)
 
-    return(raw_text)
+    return raw_text
 
 
 fail_test = False

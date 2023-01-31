@@ -42,7 +42,7 @@ def lal_binary_black_hole(
     theta_jn: float
         Angle between the total binary angular momentum and the line of sight
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Optional keyword arguments
         Supported arguments:
@@ -125,7 +125,7 @@ def lal_binary_neutron_star(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     lambda_1: float
         Dimensionless tidal deformability of mass_1
     lambda_2: float
@@ -197,7 +197,7 @@ def lal_eccentric_binary_black_hole_no_spins(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Optional keyword arguments
         Supported arguments:
@@ -275,7 +275,7 @@ def _base_lal_cbc_fd_waveform(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     eccentricity: float
         Binary eccentricity
     lambda_1: float
@@ -309,7 +309,8 @@ def _base_lal_cbc_fd_waveform(
 
     if pn_amplitude_order != 0:
         start_frequency = lalsim.SimInspiralfLow2fStart(
-            minimum_frequency, int(pn_amplitude_order), approximant)
+            float(minimum_frequency), int(pn_amplitude_order), approximant
+        )
     else:
         start_frequency = minimum_frequency
 
@@ -339,9 +340,9 @@ def _base_lal_cbc_fd_waveform(
     lalsim.SimInspiralWaveformParamsInsertPNAmplitudeOrder(
         waveform_dictionary, int(pn_amplitude_order))
     lalsim_SimInspiralWaveformParamsInsertTidalLambda1(
-        waveform_dictionary, lambda_1)
+        waveform_dictionary, float(lambda_1))
     lalsim_SimInspiralWaveformParamsInsertTidalLambda2(
-        waveform_dictionary, lambda_2)
+        waveform_dictionary, float(lambda_2))
 
     for key, value in waveform_kwargs.items():
         func = getattr(lalsim, "SimInspiralWaveformParamsInsert" + key, None)
@@ -443,6 +444,78 @@ def binary_neutron_star_roq(
         phi_12=phi_12, lambda_1=lambda_1, lambda_2=lambda_2, **waveform_kwargs)
 
 
+def lal_binary_black_hole_relative_binning(
+        frequency_array, mass_1, mass_2, luminosity_distance, a_1, tilt_1,
+        phi_12, a_2, tilt_2, phi_jl, theta_jn, phase, fiducial, **kwargs):
+    """ Source model to go with RelativeBinningGravitationalWaveTransient likelihood.
+
+    All parameters are the same as in the usual source models, except `fiducial`
+
+    fiducial: float
+        If fiducial=1, waveform evaluated on the full frequency grid is returned.
+        If fiducial=0, waveform evaluated at waveform_kwargs["frequency_bin_edges"]
+        is returned.
+    """
+
+    waveform_kwargs = dict(
+        waveform_approximant='IMRPhenomPv2', reference_frequency=50.0,
+        minimum_frequency=20.0, maximum_frequency=frequency_array[-1],
+        catch_waveform_errors=False, pn_spin_order=-1, pn_tidal_order=-1,
+        pn_phase_order=-1, pn_amplitude_order=0)
+    waveform_kwargs.update(kwargs)
+
+    if fiducial == 1:
+        return _base_lal_cbc_fd_waveform(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_jl=phi_jl,
+            phi_12=phi_12, lambda_1=0.0, lambda_2=0.0, **waveform_kwargs)
+
+    else:
+        waveform_kwargs["frequencies"] = waveform_kwargs.pop("frequency_bin_edges")
+        return _base_waveform_frequency_sequence(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_jl=phi_jl,
+            phi_12=phi_12, lambda_1=0.0, lambda_2=0.0, **waveform_kwargs)
+
+
+def lal_binary_neutron_star_relative_binning(
+        frequency_array, mass_1, mass_2, luminosity_distance, a_1, tilt_1,
+        phi_12, a_2, tilt_2, phi_jl, lambda_1, lambda_2, theta_jn, phase,
+        fiducial, **kwargs):
+    """ Source model to go with RelativeBinningGravitationalWaveTransient likelihood.
+
+    All parameters are the same as in the usual source models, except `fiducial`
+
+    fiducial: float
+        If fiducial=1, waveform evaluated on the full frequency grid is returned.
+        If fiducial=0, waveform evaluated at waveform_kwargs["frequency_bin_edges"]
+        is returned.
+    """
+
+    waveform_kwargs = dict(
+        waveform_approximant='IMRPhenomPv2_NRTidal', reference_frequency=50.0,
+        minimum_frequency=20.0, maximum_frequency=frequency_array[-1],
+        catch_waveform_errors=False, pn_spin_order=-1, pn_tidal_order=-1,
+        pn_phase_order=-1, pn_amplitude_order=0)
+    waveform_kwargs.update(kwargs)
+
+    if fiducial == 1:
+        return _base_lal_cbc_fd_waveform(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_12=phi_12,
+            phi_jl=phi_jl, lambda_1=lambda_1, lambda_2=lambda_2, **waveform_kwargs)
+    else:
+        waveform_kwargs["frequencies"] = waveform_kwargs.pop("frequency_bin_edges")
+        return _base_waveform_frequency_sequence(
+            frequency_array=frequency_array, mass_1=mass_1, mass_2=mass_2,
+            luminosity_distance=luminosity_distance, theta_jn=theta_jn, phase=phase,
+            a_1=a_1, a_2=a_2, tilt_1=tilt_1, tilt_2=tilt_2, phi_jl=phi_jl,
+            phi_12=phi_12, lambda_1=lambda_1, lambda_2=lambda_2, **waveform_kwargs)
+
+
 def _base_roq_waveform(
         frequency_array, mass_1, mass_2, luminosity_distance, a_1, tilt_1,
         phi_12, a_2, tilt_2, lambda_1, lambda_2, phi_jl, theta_jn, phase,
@@ -475,7 +548,7 @@ def _base_roq_waveform(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
 
     Waveform arguments
     ===================
@@ -576,7 +649,7 @@ def binary_black_hole_frequency_sequence(
     theta_jn: float
         Angle between the total binary angular momentum and the line of sight
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Required keyword arguments
         - frequencies:
@@ -662,7 +735,7 @@ def binary_neutron_star_frequency_sequence(
     theta_jn: float
         Angle between the total binary angular momentum and the line of sight
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     kwargs: dict
         Required keyword arguments
         - frequencies:
@@ -738,7 +811,7 @@ def _base_waveform_frequency_sequence(
     theta_jn: float
         Orbital inclination
     phase: float
-        The phase at coalescence
+        The phase at reference frequency or peak amplitude (depends on waveform)
     waveform_kwargs: dict
         Optional keyword arguments
 
@@ -772,9 +845,9 @@ def _base_waveform_frequency_sequence(
     lalsim.SimInspiralWaveformParamsInsertPNAmplitudeOrder(
         waveform_dictionary, int(pn_amplitude_order))
     lalsim_SimInspiralWaveformParamsInsertTidalLambda1(
-        waveform_dictionary, lambda_1)
+        waveform_dictionary, float(lambda_1))
     lalsim_SimInspiralWaveformParamsInsertTidalLambda2(
-        waveform_dictionary, lambda_2)
+        waveform_dictionary, float(lambda_2))
 
     for key, value in waveform_kwargs.items():
         func = getattr(lalsim, "SimInspiralWaveformParamsInsert" + key, None)
@@ -828,6 +901,44 @@ def _base_waveform_frequency_sequence(
 
 
 def sinegaussian(frequency_array, hrss, Q, frequency, **kwargs):
+    r"""
+    A frequency-domain sine-Gaussian burst source model.
+
+    .. math::
+
+        \tau &= \frac{Q}{\sqrt{2}\pi f_{0}} \\
+        \alpha &= \frac{Q}{4\sqrt{\pi} f_{0}} \\
+        h_{+} &=
+            \frac{h_{\rm rss}\sqrt{\pi}\tau}{2\sqrt{\alpha (1 + e^{-Q^2})}}
+            \left(
+                e^{-\pi^2 \tau^2 (f + f_{0})^2}
+                + e^{-\pi^2 \tau^2 (f - f_{0})^2}
+            \right) \\
+        h_{\times} &=
+            \frac{i h_{\rm rss}\sqrt{\pi}\tau}{2\sqrt{\alpha (1 - e^{-Q^2})}}
+            \left(
+                e^{-\pi^2 \tau^2 (f + f_{0})^2}
+                - e^{-\pi^2 \tau^2 (f - f_{0})^2}
+            \right)
+
+    Parameters
+    ----------
+    frequency_array: array-like
+        The frequencies at which to compute the model.
+    hrss: float
+        The amplitude of the signal.
+    Q: float
+        The quality factor of the burst, determines the decay time.
+    frequency: float
+        The peak frequency of the burst.
+    kwargs: dict
+        UNUSED
+
+    Returns
+    -------
+    dict:
+        Dictionary containing the plus and cross components of the strain.
+    """
     tau = Q / (np.sqrt(2.0) * np.pi * frequency)
     temp = Q / (4.0 * np.sqrt(np.pi) * frequency)
     fm = frequency_array - frequency
@@ -843,45 +954,101 @@ def sinegaussian(frequency_array, hrss, Q, frequency, **kwargs):
                (np.exp(-fm**2 * np.pi**2 * tau**2) -
                np.exp(-fp**2 * np.pi**2 * tau**2)))
 
-    return{'plus': h_plus, 'cross': h_cross}
+    return {'plus': h_plus, 'cross': h_cross}
 
 
-def supernova(
-        frequency_array, realPCs, imagPCs, file_path, luminosity_distance, **kwargs):
-    """ A supernova NR simulation for injections """
+def supernova(frequency_array, luminosity_distance, **kwargs):
+    """
+    A source model that reads a simulation from a text file.
 
-    realhplus, imaghplus, realhcross, imaghcross = np.loadtxt(
-        file_path, usecols=(0, 1, 2, 3), unpack=True)
+    This was originally intended for use with supernova simulations, but can
+    be applied to any source class.
+
+    Parameters
+    ----------
+    frequency_array: array-like
+        Unused
+    file_path: str
+        Path to the file containing the NR simulation. The format of this file
+        should be readable by :code:`numpy.loadtxt` and have four columns
+        containing the real and imaginary components of the plus and cross
+        polarizations.
+    luminosity_distance: float
+        The distance to the source in kpc, this scales the amplitude of the
+        signal. The simulation is assumed to be at 10kpc.
+    kwargs:
+        extra keyword arguments, this should include the :code:`file_path`
+
+    Returns
+    -------
+    dict:
+        A dictionary containing the plus and cross components of the signal.
+    """
+
+    file_path = kwargs["file_path"]
+    data = np.genfromtxt(file_path)
 
     # waveform in file at 10kpc
     scaling = 1e-3 * (10.0 / luminosity_distance)
 
-    h_plus = scaling * (realhplus + 1.0j * imaghplus)
-    h_cross = scaling * (realhcross + 1.0j * imaghcross)
+    h_plus = scaling * (data[:, 0] + 1j * data[:, 1])
+    h_cross = scaling * (data[:, 2] + 1j * data[:, 3])
     return {'plus': h_plus, 'cross': h_cross}
 
 
 def supernova_pca_model(
-        frequency_array, pc_coeff1, pc_coeff2, pc_coeff3, pc_coeff4, pc_coeff5,
-        luminosity_distance, **kwargs):
-    """ Supernova signal model """
+        frequency_array, pc_coeff1, pc_coeff2, pc_coeff3, pc_coeff4, pc_coeff5, luminosity_distance, **kwargs
+):
+    r"""
+    Signal model based on a five-component principal component decomposition
+    of a model.
 
-    realPCs = kwargs['realPCs']
-    imagPCs = kwargs['imagPCs']
+    While this was initially intended for modelling supernova signal, it is
+    applicable to any situation using such a principal component decomposition.
 
-    pc1 = realPCs[:, 0] + 1.0j * imagPCs[:, 0]
-    pc2 = realPCs[:, 1] + 1.0j * imagPCs[:, 1]
-    pc3 = realPCs[:, 2] + 1.0j * imagPCs[:, 2]
-    pc4 = realPCs[:, 3] + 1.0j * imagPCs[:, 3]
-    pc5 = realPCs[:, 4] + 1.0j * imagPCs[:, 5]
+    .. math::
+
+        h_{A} = \frac{10^{-22}}{d_{L}} \sum_{i=1}^{5} c_{i} h_{i}
+
+    Parameters
+    ----------
+    frequency_array: UNUSED
+    pc_coeff1: float
+        The first principal component coefficient.
+    pc_coeff2: float
+        The second principal component coefficient.
+    pc_coeff3: float
+        The third principal component coefficient.
+    pc_coeff4: float
+        The fourth principal component coefficient.
+    pc_coeff5: float
+        The fifth principal component coefficient.
+    luminosity_distance: float
+        The distance to the source, the amplitude is scaled such that the
+        amplitude at 10 kpc is 1e-23.
+    kwargs: dict
+        Dictionary containing numpy arrays with the real and imaginary
+        components of the principal component decomposition.
+
+    Returns
+    -------
+    dict:
+        The plus and cross polarizations of the signal
+    """
+
+    principal_components = kwargs["realPCs"] + 1j * kwargs["imagPCs"]
+    coefficients = [pc_coeff1, pc_coeff2, pc_coeff3, pc_coeff4, pc_coeff5]
+
+    strain = np.sum(
+        [coeff * principal_components[:, ii] for ii, coeff in enumerate(coefficients)],
+        axis=0
+    )
 
     # file at 10kpc
     scaling = 1e-23 * (10.0 / luminosity_distance)
 
-    h_plus = scaling * (pc_coeff1 * pc1 + pc_coeff2 * pc2 + pc_coeff3 * pc3 +
-                        pc_coeff4 * pc4 + pc_coeff5 * pc5)
-    h_cross = scaling * (pc_coeff1 * pc1 + pc_coeff2 * pc2 + pc_coeff3 * pc3 +
-                         pc_coeff4 * pc4 + pc_coeff5 * pc5)
+    h_plus = scaling * strain
+    h_cross = scaling * strain
 
     return {'plus': h_plus, 'cross': h_cross}
 

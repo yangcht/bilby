@@ -292,8 +292,6 @@ def encode_for_hdf5(key, item):
         output = json.dumps(item._get_json_dict())
     elif isinstance(item, pd.DataFrame):
         output = item.to_dict(orient="list")
-    elif isinstance(item, pd.Series):
-        output = item.to_dict()
     elif inspect.isfunction(item) or inspect.isclass(item):
         output = dict(
             __module__=item.__module__, __name__=item.__name__, __class__=True
@@ -372,10 +370,11 @@ def safe_file_dump(data, filename, module):
         data to dump
     filename: str
         The file to dump to
-    module: pickle, dill
-        The python module to use
+    module: pickle, dill, str
+        The python module to use. If a string, the module will be imported
     """
-
+    if isinstance(module, str):
+        module = import_module(module)
     temp_filename = filename + ".temp"
     with open(temp_filename, "wb") as file:
         module.dump(data, file)

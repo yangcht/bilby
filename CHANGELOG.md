@@ -1,7 +1,116 @@
 # All notable changes will be documented in this file
 
+## [1.4.1] 2022-12-07
+Version 1.4.1 release of Bilby
+
+This is a bugfix release to address some minor issues identified after v1.4.0.
+
+### Changes
+- Documentation updates (!1181, !1183)
+- Fix some of the examples in the repository (!1182)
+- Make sure conversion to symmetric mass ratio always returns a valid value (!1184)
+- Provide a default nlive for dynamic dynesty (!1185)
+- Enable the relative binning likelihood to be initialized with ra/dec when sampling in a different sky parameterization (!1186)
+- Make sure that all dumping pickle files is done safely (!1189)
+- Make error catching for `dynesty` checkpointing more robust (!1190)
+
+## [1.4.0] 2022-11-18
+Version 1.4.0 release of Bilby
+
+The main changes in this release are support for more recent versions of `dynesty` (!1138)
+and `nessai` (!1161) and adding the
+`RelativeBinningGravitationalWaveTransientLikelihood` (!1105)
+(see [arXiv:1806.08792](https://arxiv.org/abs/1806.08792)) for details.
+
+### Added
+- Per-detector likelihood calculations (!1149)
+- `bilby.gw.likelihood.relative.RelativeBinningGravitationalWaveTransient` (!1105)
+
+### Changes
+- Reset the timer for `PyMultiNest` when overwriting an existing checkpoint directory (!1163)
+- Cache the computed the noise log likelihood for the `GravitationalWaveTransient` (!1179)
+- Set the reference chirp mass for the multi banded likelihood from the prior when not specified (!1169)
+- Bugfix in the name of the saved ASD file in `Interferometer.save_data` (!1176)
+- Modify the window length for stationarity tests for `ptemcee` (!1146)
+- Explicit support for `nessai>=0.7.0` (!1161)
+- Allow prior arguments read from a string to be functions (!1144)
+- Support `dynesty>=1.1.0` (!1138)
+
+## [1.3.0] 2022-10-23
+Version 1.3.0 release of Bilby
+
+This release has a major change to a sampler interface, `pymc3` is no longer supported, users should switch to `pymc>=4`.
+This release also adds a new top-level dependency, `bilby-cython`.
+
+This release also contains various documentation improvements.
+
+### Added
+- Improved logging of likelihood information when starting sampling (!1148)
+- Switch some geometric calculations to use optimized bilby-cython package (!1053)
+- Directly specify the starting point for `bilby_mcmc` (!1155)
+- Allow a signal to be specified to only be present in a specific `Interferometer` (!1164)
+- Store time domain model function in CBCResult metadata (!1165)
+
+### Changes
+- Switch from `pymc3` to `pymc` (!1117)
+- Relax equality check for distance marginalization lookup to allow cross-platform use (!1150)
+- Fix to deal with non-checkpointing `bilby_mcmc` analyses (!1151)
+- Allow result objects with different analysis configurations to be combined (!1153)
+- Improve the storing of environment information (!166)
+- Fix issue when specifying distance and redshfit independently (!1154)
+- Fix a bug in the storage of likelihood/prior samples for `bilby_mcmc` (!1156)
+
+## [1.2.1] 2022-09-05
+Version 1.2.1 release of Bilby
+
+This release contains a few bug fixes following 1.2.0.
+
+### Changes
+- Improve how sampling seed is handled across samplers (!1134)
+- Make sure labels are included when evidences are in corner plot legend (!1135)
+- Remove calls to `getargspec` (!1136)
+- Make sure parameter reconstruction cache is not mangled when reading (!1126)
+- Enable the constant uncertainty calibration spline to have a specifiable boundary condition (!1137)
+- Fix a bug in checkpointing for `bilby_mcmc` (!1141)
+- Fix the `LALCBCWaveformGenerator` (!1140)
+- Switch to automatic versioning with `setuptools_scm` (!1125)
+- Improve the stability of the multivariate normal prior (!1142)
+- Extend mass conversions to include source-frame parameters (!1131)
+- Fix prior ranges for GW150914 example (!1129)
+
+## [1.2.0] 2022-08-15
+Version 1.2.0 release of Bilby
+
+This is the first release that drops support for `Python<3.8`.
+
+This release involves major refactoring, especially of the sampler implementations.
+
+Additionally, there are a range of improvements to how information is passed
+with multiprocessing.
+
+### Added
+- Time marginalized ROQ likelihood (!1040)
+- Multiple and multi-banded ROQ likelihood (!1093)
+- Gaussian process likelihoods (!1086)
+- `CBCWaveformGenerator` added with CBC specific defaults (!1080)
+
+### Changes
+- Fixes and improvements to multi-processing (!1084, !1043, !1096)
+- Major refactoring of sampler implementations (!1043)
+- Fixes for reading/writing priors (!1103, !1127, !1128)
+- Fixes/updates to exmample scripts (!1050, !1031, !1076, !1081, !1074)
+- Fixes to calibration correction in GW likelihoods (!1114, !1120, !1119)
+
+### Deprecated/removed
+- Require `Python>=3.8`
+- Require `astropy>=5`
+- `bilby.core.utils.conversion.gps_time_to_gmst`
+- `bilby.core.utils.spherical_to_cartesian`
+- `bilby.core.utils.progress`
+- Deepdish IO for `Result`, `Interferometer`, and `InterferometerList`
+
 ## [1.1.5] 2022-01-14
-Version 1.1.5 release of bilby
+Version 1.1.5 release of Bilby
 
 ### Added
 - Option to enforce that a GW signal fits into the segment duration (!1041)

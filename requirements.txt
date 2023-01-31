@@ -1,4 +1,5 @@
-dynesty<1.1
+bilby.cython>=0.3.0
+dynesty>=2
 emcee
 corner
 numpy
@@ -8,6 +9,4 @@ pandas
 dill
 tqdm
 h5py
-tables
-astropy
 attrs

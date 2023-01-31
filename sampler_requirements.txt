@@ -2,12 +2,13 @@ cpnest>=0.9.4
 dynesty
 emcee
 nestle
+ptmcmcsampler!=2.1.0,!=0.0.0
 ptemcee
-pymc3>=3.6
+pymc>=4.0.0
 pymultinest
 kombine
 ultranest>=3.0.0
 dnest4
-nessai>=0.2.3
+nessai>=0.7.0
 schwimmbad
 zeus-mcmc>=2.3.0

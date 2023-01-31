@@ -1,9 +1,14 @@
 import os
 
 import numpy as np
+from bilby_cython.geometry import (
+    get_polarization_tensor,
+    three_by_three_matrix_contraction,
+    time_delay_from_geocenter,
+)
 
 from ...core import utils
-from ...core.utils import docstring, logger, PropertyAccessor
+from ...core.utils import docstring, logger, PropertyAccessor, safe_file_dump
 from .. import utils as gwutils
 from .calibration import Recalibrate
 from .geometry import InterferometerGeometry
@@ -264,17 +269,23 @@ class Interferometer(object):
         psi: float
             binary polarisation angle counter-clockwise about the direction of propagation
         mode: str
-            polarisation mode (e.g. 'plus', 'cross')
+            polarisation mode (e.g. 'plus', 'cross') or the name of a specific detector.
+            If mode == self.name, return 1
 
         Returns
         =======
-        array_like: A 3x3 array representation of the antenna response for the specified mode
+        float: The antenna response for the specified mode and time/location
 
         """
-        polarization_tensor = gwutils.get_polarization_tensor(ra, dec, time, psi, mode)
-        return np.einsum('ij,ij->', self.geometry.detector_tensor, polarization_tensor)
+        if mode in ["plus", "cross", "x", "y", "breathing", "longitudinal"]:
+            polarization_tensor = get_polarization_tensor(ra, dec, time, psi, mode)
+            return three_by_three_matrix_contraction(self.geometry.detector_tensor, polarization_tensor)
+        elif mode == self.name:
+            return 1
+        else:
+            return 0
 
-    def get_detector_response(self, waveform_polarizations, parameters):
+    def get_detector_response(self, waveform_polarizations, parameters, frequencies=None):
         """ Get the detector response for a particular waveform
 
         Parameters
@@ -283,11 +294,21 @@ class Interferometer(object):
             polarizations of the waveform
         parameters: dict
             parameters describing position and time of arrival of the signal
-
+        frequencies: array-like, optional
+        The frequency values to evaluate the response at. If
+        not provided, the response is computed using
+        :code:`self.frequency_array`. If the frequencies are
+        specified, no frequency masking is performed.
         Returns
         =======
         array_like: A 3x3 array representation of the detector response (signal observed in the interferometer)
         """
+        if frequencies is None:
+            frequencies = self.frequency_array[self.frequency_mask]
+            mask = self.frequency_mask
+        else:
+            mask = np.ones(len(frequencies), dtype=bool)
+
         signal = {}
         for mode in waveform_polarizations.keys():
             det_response = self.antenna_response(
@@ -297,9 +318,7 @@ class Interferometer(object):
                 parameters['psi'], mode)
 
             signal[mode] = waveform_polarizations[mode] * det_response
-        signal_ifo = sum(signal.values())
-
-        signal_ifo *= self.strain_data.frequency_mask
+        signal_ifo = sum(signal.values()) * mask
 
         time_shift = self.time_delay_from_geocenter(
             parameters['ra'], parameters['dec'], parameters['geocent_time'])
@@ -309,12 +328,11 @@ class Interferometer(object):
         dt_geocent = parameters['geocent_time'] - self.strain_data.start_time
         dt = dt_geocent + time_shift
 
-        signal_ifo[self.strain_data.frequency_mask] = signal_ifo[self.strain_data.frequency_mask] * np.exp(
-            -1j * 2 * np.pi * dt * self.strain_data.frequency_array[self.strain_data.frequency_mask])
+        signal_ifo[mask] = signal_ifo[mask] * np.exp(-1j * 2 * np.pi * dt * frequencies)
 
-        signal_ifo[self.strain_data.frequency_mask] *= self.calibration_model.get_calibration_factor(
-            self.strain_data.frequency_array[self.strain_data.frequency_mask],
-            prefix='recalib_{}_'.format(self.name), **parameters)
+        signal_ifo[mask] *= self.calibration_model.get_calibration_factor(
+            frequencies, prefix='recalib_{}_'.format(self.name), **parameters
+        )
 
         return signal_ifo
 
@@ -527,7 +545,7 @@ class Interferometer(object):
         =======
         float: The time delay from geocenter in seconds
         """
-        return gwutils.time_delay_geocentric(self.geometry.vertex, np.array([0, 0, 0]), ra, dec, time)
+        return time_delay_from_geocenter(self.geometry.vertex, ra, dec, time)
 
     def vertex_position_geocentric(self):
         """
@@ -609,7 +627,12 @@ class Interferometer(object):
         return self.strain_data.frequency_domain_strain / self.amplitude_spectral_density_array
 
     def save_data(self, outdir, label=None):
-        """ Creates a save file for the data in plain text format
+        """ Creates save files for interferometer data in plain text format.
+
+        Saves two files: the frequency domain strain data with three columns [f, real part of h(f),
+        imaginary part of h(f)], and the amplitude spectral density with two columns [f, ASD(f)].
+
+        Note that in v1.3.0 and below, the ASD was saved in a file called *_psd.dat.
 
         Parameters
         ==========
@@ -620,10 +643,10 @@ class Interferometer(object):
         """
 
         if label is None:
-            filename_psd = '{}/{}_psd.dat'.format(outdir, self.name)
+            filename_asd = '{}/{}_asd.dat'.format(outdir, self.name)
             filename_data = '{}/{}_frequency_domain_data.dat'.format(outdir, self.name)
         else:
-            filename_psd = '{}/{}_{}_psd.dat'.format(outdir, self.name, label)
+            filename_asd = '{}/{}_{}_asd.dat'.format(outdir, self.name, label)
             filename_data = '{}/{}_{}_frequency_domain_data.dat'.format(outdir, self.name, label)
         np.savetxt(filename_data,
                    np.array(
@@ -631,7 +654,7 @@ class Interferometer(object):
                         self.strain_data.frequency_domain_strain.real,
                         self.strain_data.frequency_domain_strain.imag]).T,
                    header='f real_h(f) imag_h(f)')
-        np.savetxt(filename_psd,
+        np.savetxt(filename_asd,
                    np.array(
                        [self.strain_data.frequency_array,
                         self.amplitude_spectral_density_array]).T,
@@ -775,11 +798,9 @@ class Interferometer(object):
         format="pickle", extra=".. versionadded:: 1.1.0"
     ))
     def to_pickle(self, outdir="outdir", label=None):
-        import dill
         utils.check_directory_exists_and_if_not_mkdir('outdir')
         filename = self._filename_from_outdir_label_extension(outdir, label, extension="pkl")
-        with open(filename, "wb") as ff:
-            dill.dump(self, ff)
+        safe_file_dump(self, filename, "dill")
 
     @classmethod
     @docstring(_load_docstring.format(format="pickle"))

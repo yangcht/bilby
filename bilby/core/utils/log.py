@@ -1,6 +1,7 @@
+import json
 import logging
-import os
 from pathlib import Path
+import subprocess
 import sys
 
 logger = logging.getLogger('bilby')
@@ -60,13 +61,8 @@ def setup_logger(outdir='.', label=None, log_level='INFO', print_version=False):
 
 
 def get_version_information():
-    version_file = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.version')
-    try:
-        with open(version_file, 'r') as f:
-            return f.readline().rstrip()
-    except EnvironmentError:
-        print("No version information file '.version' found")
+    from bilby import __version__
+    return __version__
 
 
 def loaded_modules_dict():
@@ -76,3 +72,65 @@ def loaded_modules_dict():
         if "." not in str(key):
             vdict[key] = str(getattr(sys.modules[key], "__version__", "N/A"))
     return vdict
+
+
+def env_package_list(as_dataframe=False):
+    """Get the list of packages installed in the system prefix.
+
+    If it is detected that the system prefix is part of a Conda environment,
+    a call to ``conda list --prefix {sys.prefix}`` will be made, otherwise
+    the call will be to ``{sys.executable} -m pip list installed``.
+
+    Parameters
+    ----------
+    as_dataframe: bool
+        return output as a `pandas.DataFrame`
+
+    Returns
+    -------
+    pkgs : `list` of `dict`, or `pandas.DataFrame`
+        If ``as_dataframe=False`` is given, the output is a `list` of `dict`,
+        one for each package, at least with ``'name'`` and ``'version'`` keys
+        (more if `conda` is used).
+        If ``as_dataframe=True`` is given, the output is a `DataFrame`
+        created from the `list` of `dicts`.
+    """
+    prefix = sys.prefix
+
+    # if a conda-meta directory exists, this is a conda environment, so
+    # use conda to print the package list
+    conda_detected = (Path(prefix) / "conda-meta").is_dir()
+    if conda_detected:
+        try:
+            pkgs = json.loads(subprocess.check_output([
+                "conda",
+                "list",
+                "--prefix", prefix,
+                "--json"
+            ]))
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            # When a conda env is in use but conda is unavailable
+            conda_detected = False
+
+    # otherwise try and use Pip
+    if not conda_detected:
+        try:
+            import pip  # noqa: F401
+        except ModuleNotFoundError:  # no pip?
+            # not a conda environment, and no pip, so just return
+            # the list of loaded modules
+            modules = loaded_modules_dict()
+            pkgs = [{"name": x, "version": y} for x, y in modules.items()]
+        else:
+            pkgs = json.loads(subprocess.check_output([
+                sys.executable,
+                "-m", "pip",
+                "list", "installed",
+                "--format", "json",
+            ]))
+
+    # convert to recarray for storage
+    if as_dataframe:
+        from pandas import DataFrame
+        return DataFrame(pkgs)
+    return pkgs

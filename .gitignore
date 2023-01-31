@@ -13,5 +13,6 @@ MANIFEST
 *.dat
 *.version
 *.ipynb_checkpoints
-outdir/*
+**/outdir
 .idea/*
+bilby/_version.py

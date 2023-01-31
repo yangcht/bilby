@@ -9,6 +9,7 @@ Aditya Vijaykumar
 Andrew Kim
 Andrew Miller
 Antoni Ramos-Buades
+Apratim Ganguly
 Avi Vajpeyi
 Bruce Edelman
 Carl-Johan Haster
@@ -24,19 +25,23 @@ Eric Thrane
 Ethan Payne
 Francisco Javier Hernandez
 Gregory Ashton
+Hank Hua
 Hector Estelles
 Ignacio Magaña Hernandez
 Isobel Marguarethe Romero-Shaw
 Jack Heinzel
+Jacob Golomb
 Jade Powell
 James A Clark
 Jeremy G Baier
 John Veitch
 Joshua Brandt
 Josh Willis
+Karl Wette
 Katerina Chatziioannou
 Kaylee de Soto
 Khun Sang Phukon
+Kruthi Krishna
 Kshipraa Athar
 Leslie Wade
 Liting Xiao
@@ -54,11 +59,13 @@ Moritz Huebner
 Nicola De Lillo
 Nikhil Sarin
 Nirban Bose
+Noah Wolfe
 Olivia Wilk
 Paul Easter
 Paul Lasky
 Philip Relton
 Rhys Green
+Rhiannon Udall
 Rico Lo
 Roberto Cotesta
 Rory Smith
@@ -75,6 +82,9 @@ Stephen R Green
 Sumeet Kulkarni
 Sylvia Biscoveanu
 Tathagata Ghosh
+Tomasz Baka
+Will M. Farr
 Virginia d'Emilio
 Vivien Raymond
 Ka-Lok Lo
+Isaac Legred

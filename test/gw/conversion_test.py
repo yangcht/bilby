@@ -1,6 +1,8 @@
 import unittest
 
 import numpy as np
+import pandas as pd
+
 
 import bilby
 from bilby.gw import conversion
@@ -97,6 +99,13 @@ class TestBasicConversions(unittest.TestCase):
             self.chirp_mass, self.mass_ratio
         )
         self.assertAlmostEqual(self.total_mass, total_mass)
+
+    def test_chirp_mass_and_mass_ratio_to_component_masses(self):
+        mass_1, mass_2 = \
+            conversion.chirp_mass_and_mass_ratio_to_component_masses(
+                self.chirp_mass, self.mass_ratio)
+        self.assertAlmostEqual(self.mass_1, mass_1)
+        self.assertAlmostEqual(self.mass_2, mass_2)
 
     def test_component_masses_to_chirp_mass(self):
         chirp_mass = conversion.component_masses_to_chirp_mass(self.mass_1, self.mass_2)
@@ -442,20 +451,62 @@ class TestGenerateAllParameters(unittest.TestCase):
             "lambda_tilde",
             "delta_lambda_tilde",
         ]
+        self.data_frame = pd.DataFrame({
+            key: [value] * 100 for key, value in self.parameters.items()
+        })
 
     def test_generate_all_bbh_parameters(self):
-        new_parameters = bilby.gw.conversion.generate_all_bbh_parameters(
-            self.parameters
+        self._generate(
+            bilby.gw.conversion.generate_all_bbh_parameters,
+            self.expected_bbh_keys,
         )
-        for key in self.expected_bbh_keys:
-            self.assertIn(key, new_parameters)
 
     def test_generate_all_bns_parameters(self):
-        new_parameters = bilby.gw.conversion.generate_all_bns_parameters(
-            self.parameters
+        self._generate(
+            bilby.gw.conversion.generate_all_bns_parameters,
+            self.expected_bbh_keys + self.expected_tidal_keys,
         )
-        for key in self.expected_bbh_keys + self.expected_tidal_keys:
-            self.assertIn(key, new_parameters)
+
+    def _generate(self, func, expected):
+        for values in [self.parameters, self.data_frame]:
+            new_parameters = func(values)
+            for key in expected:
+                self.assertIn(key, new_parameters)
+
+    def test_generate_bbh_parameters_with_likelihood(self):
+        priors = bilby.gw.prior.BBHPriorDict()
+        priors["geocent_time"] = bilby.core.prior.Uniform(0.4, 0.6)
+        ifos = bilby.gw.detector.InterferometerList(["H1"])
+        ifos.set_strain_data_from_power_spectral_densities(duration=1, sampling_frequency=256)
+        wfg = bilby.gw.waveform_generator.WaveformGenerator(
+            frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole
+        )
+        likelihood = bilby.gw.likelihood.GravitationalWaveTransient(
+            interferometers=ifos,
+            waveform_generator=wfg,
+            priors=priors,
+            phase_marginalization=True,
+            time_marginalization=True,
+            reference_frame="H1L1",
+        )
+        self.parameters["zenith"] = 0.0
+        self.parameters["azimuth"] = 0.0
+        self.parameters["time_jitter"] = 0.0
+        del self.parameters["ra"], self.parameters["dec"]
+        self.parameters = pd.DataFrame(self.parameters, index=range(1))
+        converted = bilby.gw.conversion.generate_all_bbh_parameters(
+            sample=self.parameters, likelihood=likelihood, priors=priors
+        )
+        extra_expected = [
+            "geocent_time",
+            "phase",
+            "H1_optimal_snr",
+            "H1_matched_filter_snr",
+            "ra",
+            "dec",
+        ]
+        for key in extra_expected:
+            self.assertIn(key, converted)
 
 
 class TestDistanceTransformations(unittest.TestCase):
@@ -480,6 +531,131 @@ class TestDistanceTransformations(unittest.TestCase):
         )
         dl = conversion.luminosity_distance_to_comoving_distance(dc, cosmology="WMAP9")
         self.assertAlmostEqual(max(abs(dl - self.distances)), 0, 4)
+
+
+class TestGenerateMassParameters(unittest.TestCase):
+    def setUp(self):
+        self.expected_values = {'mass_1': 2.0,
+                                'mass_2': 1.0,
+                                'chirp_mass': 1.2167286837864113,
+                                'total_mass': 3.0,
+                                'mass_1_source': 4.0,
+                                'mass_2_source': 2.0,
+                                'chirp_mass_source': 2.433457367572823,
+                                'total_mass_source': 6,
+                                'symmetric_mass_ratio': 0.2222222222222222,
+                                'mass_ratio': 0.5}
+
+    def helper_generation_from_keys(self, keys, expected_values, source=False):
+        # Explicitly test the helper generate_component_masses
+        local_test_vars = \
+            {key: expected_values[key] for key in keys}
+        local_test_vars_with_component_masses = \
+            conversion.generate_component_masses(local_test_vars, source=source)
+        if source:
+            self.assertTrue("mass_1_source" in local_test_vars_with_component_masses.keys())
+            self.assertTrue("mass_2_source" in local_test_vars_with_component_masses.keys())
+        else:
+            self.assertTrue("mass_1" in local_test_vars_with_component_masses.keys())
+            self.assertTrue("mass_2" in local_test_vars_with_component_masses.keys())
+        for key in local_test_vars_with_component_masses.keys():
+            self.assertAlmostEqual(
+                local_test_vars_with_component_masses[key],
+                self.expected_values[key])
+
+        # Test the function more generally
+        local_all_mass_parameters = \
+            conversion.generate_mass_parameters(local_test_vars, source=source)
+        if source:
+            self.assertEqual(
+                set(local_all_mass_parameters.keys()),
+                set(["mass_1_source",
+                     "mass_2_source",
+                     "chirp_mass_source",
+                     "total_mass_source",
+                     "symmetric_mass_ratio",
+                     "mass_ratio",
+                     ]
+                    )
+            )
+        else:
+            self.assertEqual(
+                set(local_all_mass_parameters.keys()),
+                set(["mass_1",
+                     "mass_2",
+                     "chirp_mass",
+                     "total_mass",
+                     "symmetric_mass_ratio",
+                     "mass_ratio",
+                     ]
+                    )
+            )
+        for key in local_all_mass_parameters.keys():
+            self.assertAlmostEqual(expected_values[key], local_all_mass_parameters[key])
+
+    def test_from_mass_1_and_mass_2(self):
+        self.helper_generation_from_keys(["mass_1", "mass_2"],
+                                         self.expected_values)
+
+    def test_from_mass_1_and_mass_ratio(self):
+        self.helper_generation_from_keys(["mass_1", "mass_ratio"],
+                                         self.expected_values)
+
+    def test_from_mass_2_and_mass_ratio(self):
+        self.helper_generation_from_keys(["mass_2", "mass_ratio"],
+                                         self.expected_values)
+
+    def test_from_mass_1_and_total_mass(self):
+        self.helper_generation_from_keys(["mass_2", "total_mass"],
+                                         self.expected_values)
+
+    def test_from_chirp_mass_and_mass_ratio(self):
+        self.helper_generation_from_keys(["chirp_mass", "mass_ratio"],
+                                         self.expected_values)
+
+    def test_from_chirp_mass_and_symmetric_mass_ratio(self):
+        self.helper_generation_from_keys(["chirp_mass", "symmetric_mass_ratio"],
+                                         self.expected_values)
+
+    def test_from_chirp_mass_and_symmetric_mass_1(self):
+        self.helper_generation_from_keys(["chirp_mass", "mass_1"],
+                                         self.expected_values)
+
+    def test_from_chirp_mass_and_symmetric_mass_2(self):
+        self.helper_generation_from_keys(["chirp_mass", "mass_2"],
+                                         self.expected_values)
+
+    def test_from_mass_1_source_and_mass_2_source(self):
+        self.helper_generation_from_keys(["mass_1_source", "mass_2_source"],
+                                         self.expected_values, source=True)
+
+    def test_from_mass_1_source_and_mass_ratio(self):
+        self.helper_generation_from_keys(["mass_1_source", "mass_ratio"],
+                                         self.expected_values, source=True)
+
+    def test_from_mass_2_source_and_mass_ratio(self):
+        self.helper_generation_from_keys(["mass_2_source", "mass_ratio"],
+                                         self.expected_values, source=True)
+
+    def test_from_mass_1_source_and_total_mass(self):
+        self.helper_generation_from_keys(["mass_2_source", "total_mass_source"],
+                                         self.expected_values, source=True)
+
+    def test_from_chirp_mass_source_and_mass_ratio(self):
+        self.helper_generation_from_keys(["chirp_mass_source", "mass_ratio"],
+                                         self.expected_values, source=True)
+
+    def test_from_chirp_mass_source_and_symmetric_mass_ratio(self):
+        self.helper_generation_from_keys(["chirp_mass_source", "symmetric_mass_ratio"],
+                                         self.expected_values, source=True)
+
+    def test_from_chirp_mass_source_and_symmetric_mass_1(self):
+        self.helper_generation_from_keys(["chirp_mass_source", "mass_1_source"],
+                                         self.expected_values, source=True)
+
+    def test_from_chirp_mass_source_and_symmetric_mass_2(self):
+        self.helper_generation_from_keys(["chirp_mass_source", "mass_2_source"],
+                                         self.expected_values, source=True)
 
 
 if __name__ == "__main__":
