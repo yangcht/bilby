@@ -822,7 +822,7 @@ class FisherMatrixProposal(AdaptiveGaussianProposal):
         posterior density than the last update.
         """
         ln_post = sample[LOGLKEY] + sample[LOGPKEY]
-        if ln_post > self.last_ln_post:
+        if ln_post > self.last_ln_post or self.cholesky is None:
             try:
                 ifim = self.fmp.calculate_iFIM(sample.dict)
                 self.cholesky = np.linalg.cholesky(ifim)
