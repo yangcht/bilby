@@ -166,7 +166,6 @@ class Bilby_MCMC(MCMCSampler):
         use_ratio=False,
         skip_import_verification=True,
         check_point_plot=True,
-        check_point_delta_t=1800,
         diagnostic=False,
         resume=True,
         exit_code=130,
