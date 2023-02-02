@@ -304,19 +304,14 @@ class DifferentialEvolutionProposal(BaseProposal):
         theta = chain.current_sample
         theta1 = chain.random_sample
         theta2 = chain.random_sample
-        if np.random.rand() > self.mode_hopping_frac:
-            gamma = 1
-        else:
-            # Base jump size
-            gamma = np.random.normal(0, 2.38 / np.sqrt(2 * self.ndim))
-            # Scale uniformly in log between 0.1 and 10 times
-            gamma *= np.exp(np.log(0.1) + np.log(100.0) * np.random.rand())
-
-        for key in self.parameters:
-            theta[key] += gamma * (theta2[key] - theta1[key])
-
-        log_factor = 0
-        return theta, log_factor
+        return _differential_move(
+            sample=theta,
+            theta1=theta1,
+            theta2=theta2,
+            mode_hopping_frac=self.mode_hopping_frac,
+            ndim=self.ndim,
+            parameters=self.parameters,
+        )
 
 
 class UniformProposal(BaseProposal):
@@ -811,7 +806,7 @@ class FisherMatrixProposal(AdaptiveGaussianProposal):
         self.cholesky = None
         self.fmp = FisherMatrixPosteriorEstimator(
             likelihood=_sampling_convenience_dump.likelihood,
-            priors=_sampling_convenience_dump.priors,
+            priors=priors,
             parameters=self.parameters,
             fd_eps=self.fd_eps,
         )
@@ -1009,6 +1004,22 @@ class StretchProposal(BaseProposal):
         return _stretch_move(sample, rand, self.scale, self.ndim, self.parameters)
 
 
+def _differential_move(sample, theta1, theta2, mode_hopping_frac, ndim, parameters):
+    if np.random.rand() > mode_hopping_frac:
+        gamma = 1
+    else:
+        # Base jump size
+        gamma = np.random.normal(0, 2.38 / np.sqrt(2 * ndim))
+        # Scale uniformly in log between 0.1 and 10 times
+        gamma *= np.exp(np.log(0.1) + np.log(100.0) * np.random.rand())
+
+    for key in parameters:
+        sample[key] += gamma * (theta2[key] - theta1[key])
+
+    log_factor = 0
+    return sample, log_factor
+
+
 def _stretch_move(sample, complement, scale, ndim, parameters):
     # Draw z
     u = np.random.rand()
@@ -1061,8 +1072,44 @@ class EnsembleStretch(EnsembleProposal):
         )
 
 
+class EnsembleDifferentialEvolution(EnsembleProposal):
+    """The Goodman & Weare (2010) Stretch proposal for an Ensemble
+
+    Implementation of the Stretch proposal using a sample drawn from complement.
+    We assume the form of g(z) from Equation (9) of [1].
+
+    References
+    ----------
+    [1] Goodman & Weare (2010)
+        https://ui.adsabs.harvard.edu/abs/2010CAMCS...5...65G/abstract
+
+    """
+
+    def __init__(self, priors, weight=1, mode_hopping_frac=0.5):
+        super(EnsembleDifferentialEvolution, self).__init__(priors, weight)
+        self.mode_hopping_frac = mode_hopping_frac
+
+    def propose(self, chain, chain_complement):
+        sample = chain.current_sample
+        alternate_chains = np.random.choice(len(chain_complement), 2, replace=False)
+        theta1 = chain_complement[alternate_chains[0]]
+        theta2 = chain_complement[alternate_chains[1]]
+        return _differential_move(
+            sample=sample,
+            theta1=theta1,
+            theta2=theta2,
+            mode_hopping_frac=self.mode_hopping_frac,
+            ndim=self.nndim,
+            parameters=self.parameters,
+        )
+
+
 def get_default_ensemble_proposal_cycle(priors):
-    return ProposalCycle([EnsembleStretch(priors)])
+    return ProposalCycle([
+        EnsembleStretch(priors),
+        FisherMatrixProposal(priors),
+        EnsembleDifferentialEvolution(priors),
+    ])
 
 
 def get_proposal_cycle(string, priors, L1steps=1, warn=True):
@@ -1202,7 +1249,7 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
                     subset=distance_inclination,
                 ),
             ]
-        for key in ["time_jitter", "psi", "phi_12", "tilt_2", "lambda_1", "lambda_2"]:
+        for key in ["time_jitter", "psi", "phi_jl", "phi_12", "tilt_2", "lambda_1", "lambda_2"]:
             if key in priors.non_fixed_keys:
                 plist.append(PriorProposal(priors, subset=[key], weight=tiny_weight))
         for key in ["chirp_mass"]:
