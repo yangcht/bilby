@@ -29,7 +29,7 @@ RUN pip install sphinx numpydoc nbsphinx sphinx_rtd_theme sphinx-tabs autodoc
 RUN conda install -n ${{conda_env}} -c conda-forge scikit-image celerite george
 
 # Install dependencies and samplers
-RUN pip install corner healpy cython pytables
+RUN pip install corner healpy cython tables
 RUN conda install -n ${{conda_env}} {conda_samplers} -c conda-forge -c pytorch
 
 # Install Polychord
