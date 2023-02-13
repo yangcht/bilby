@@ -1105,11 +1105,13 @@ class EnsembleDifferentialEvolution(EnsembleProposal):
 
 
 def get_default_ensemble_proposal_cycle(priors):
-    return ProposalCycle([
-        EnsembleStretch(priors),
-        FisherMatrixProposal(priors),
-        EnsembleDifferentialEvolution(priors),
-    ])
+    return ProposalCycle(
+        [
+            EnsembleStretch(priors),
+            FisherMatrixProposal(priors),
+            EnsembleDifferentialEvolution(priors),
+        ]
+    )
 
 
 def get_proposal_cycle(string, priors, L1steps=1, warn=True):
@@ -1249,7 +1251,15 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
                     subset=distance_inclination,
                 ),
             ]
-        for key in ["time_jitter", "psi", "phi_jl", "phi_12", "tilt_2", "lambda_1", "lambda_2"]:
+        for key in [
+            "time_jitter",
+            "psi",
+            "phi_jl",
+            "phi_12",
+            "tilt_2",
+            "lambda_1",
+            "lambda_2",
+        ]:
             if key in priors.non_fixed_keys:
                 plist.append(PriorProposal(priors, subset=[key], weight=tiny_weight))
         for key in ["chirp_mass"]:
