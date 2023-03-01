@@ -1391,7 +1391,7 @@ def generate_source_frame_parameters(sample):
     return output_sample
 
 
-def compute_snrs(sample, likelihood, npool=1):
+def compute_snrs(sample, likelihood, npool=1, block=10):
     """
     Compute the optimal and matched filter snrs of all posterior samples
     and print it out.
@@ -1404,53 +1404,43 @@ def compute_snrs(sample, likelihood, npool=1):
         Likelihood function to be applied on the posterior
 
     """
-    if likelihood is not None:
-        if isinstance(sample, dict):
-            likelihood.parameters.update(sample)
-            signal_polarizations = likelihood.waveform_generator.frequency_domain_strain(likelihood.parameters.copy())
-            for ifo in likelihood.interferometers:
-                per_detector_snr = likelihood.calculate_snrs(signal_polarizations, ifo)
-                sample['{}_matched_filter_snr'.format(ifo.name)] =\
-                    per_detector_snr.complex_matched_filter_snr
-                sample['{}_optimal_snr'.format(ifo.name)] = \
-                    per_detector_snr.optimal_snr_squared.real ** 0.5
-        else:
-            from tqdm.auto import tqdm
-            logger.info('Computing SNRs for every sample.')
-
-            fill_args = [(ii, row) for ii, row in sample.iterrows()]
-            if npool > 1:
-                from ..core.sampler.base_sampler import _initialize_global_variables
-                pool = multiprocessing.Pool(
-                    processes=npool,
-                    initializer=_initialize_global_variables,
-                    initargs=(likelihood, None, None, False),
-                )
-                logger.info(
-                    "Using a pool with size {} for nsamples={}".format(npool, len(sample))
-                )
-                new_samples = pool.map(_compute_snrs, tqdm(fill_args, file=sys.stdout))
-                pool.close()
-                pool.join()
-            else:
-                from ..core.sampler.base_sampler import _sampling_convenience_dump
-                _sampling_convenience_dump.likelihood = likelihood
-                new_samples = [_compute_snrs(xx) for xx in tqdm(fill_args, file=sys.stdout)]
-
-            for ii, ifo in enumerate(likelihood.interferometers):
-                matched_filter_snrs = list()
-                optimal_snrs = list()
-                mf_key = '{}_matched_filter_snr'.format(ifo.name)
-                optimal_key = '{}_optimal_snr'.format(ifo.name)
-                for new_sample in new_samples:
-                    matched_filter_snrs.append(new_sample[ii].complex_matched_filter_snr)
-                    optimal_snrs.append(new_sample[ii].optimal_snr_squared.real ** 0.5)
-
-                sample[mf_key] = matched_filter_snrs
-                sample[optimal_key] = optimal_snrs
-
-    else:
+    if likelihood is None:
         logger.debug('Not computing SNRs.')
+        return sample
+
+    if isinstance(sample, dict):
+        likelihood.parameters.update(sample)
+        signal_polarizations = likelihood.waveform_generator.frequency_domain_strain(likelihood.parameters.copy())
+        for ifo in likelihood.interferometers:
+            per_detector_snr = likelihood.calculate_snrs(signal_polarizations, ifo)
+            sample['{}_matched_filter_snr'.format(ifo.name)] =\
+                per_detector_snr.complex_matched_filter_snr
+            sample['{}_optimal_snr'.format(ifo.name)] = \
+                per_detector_snr.optimal_snr_squared.real ** 0.5
+        return sample
+
+    logger.info('Computing SNRs for every sample.')
+    new_samples = _run_function_with_pool(
+        func=_compute_snrs,
+        samples=sample,
+        likelihood=likelihood,
+        label="compute_snrs",
+        npool=npool,
+        block=block,
+        use_cache=False,
+    )
+
+    for ii, ifo in enumerate(likelihood.interferometers):
+        matched_filter_snrs = list()
+        optimal_snrs = list()
+        mf_key = '{}_matched_filter_snr'.format(ifo.name)
+        optimal_key = '{}_optimal_snr'.format(ifo.name)
+        for new_sample in new_samples:
+            matched_filter_snrs.append(new_sample[ii].complex_matched_filter_snr)
+            optimal_snrs.append(new_sample[ii].optimal_snr_squared.real ** 0.5)
+
+        sample[mf_key] = matched_filter_snrs
+        sample[optimal_key] = optimal_snrs
 
 
 def _compute_snrs(args):
@@ -1469,7 +1459,7 @@ def _compute_snrs(args):
     return snrs
 
 
-def compute_per_detector_log_likelihoods(samples, likelihood, npool=1, block=10):
+def compute_per_detector_log_likelihoods(samples, likelihood, npool=1, block=10, use_cache=True):
     """
     Calculate the log likelihoods in each detector.
 
@@ -1489,83 +1479,121 @@ def compute_per_detector_log_likelihoods(samples, likelihood, npool=1, block=10)
     sample: DataFrame
         Returns the posterior with new samples.
     """
-    if likelihood is not None:
-        if not callable(likelihood.compute_per_detector_log_likelihood):
-            logger.debug('Not computing per-detector log likelihoods.')
-            return samples
-
-        if isinstance(samples, dict):
-            likelihood.parameters.update(samples)
-            samples = likelihood.compute_per_detector_log_likelihood()
-            return samples
-
-        elif not isinstance(samples, DataFrame):
-            raise ValueError("Unable to handle input samples of type {}".format(type(samples)))
-        from tqdm.auto import tqdm
-
-        logger.info('Computing per-detector log likelihoods.')
-
-        # Initialize cache dict
-        cached_samples_dict = dict()
-
-        # Store samples to convert for checking
-        cached_samples_dict["_samples"] = samples
-
-        # Set up the multiprocessing
-        if npool > 1:
-            from ..core.sampler.base_sampler import _initialize_global_variables
-            pool = multiprocessing.Pool(
-                processes=npool,
-                initializer=_initialize_global_variables,
-                initargs=(likelihood, None, None, False),
-            )
-            logger.info(
-                "Using a pool with size {} for nsamples={}"
-                .format(npool, len(samples))
-            )
-        else:
-            from ..core.sampler.base_sampler import _sampling_convenience_dump
-            _sampling_convenience_dump.likelihood = likelihood
-            pool = None
-
-        fill_args = [(ii, row) for ii, row in samples.iterrows()]
-        ii = 0
-        pbar = tqdm(total=len(samples), file=sys.stdout)
-        while ii < len(samples):
-            if ii in cached_samples_dict:
-                ii += block
-                pbar.update(block)
-                continue
-
-            if pool is not None:
-                subset_samples = pool.map(_compute_per_detector_log_likelihoods,
-                                          fill_args[ii: ii + block])
-            else:
-                subset_samples = [list(_compute_per_detector_log_likelihoods(xx))
-                                  for xx in fill_args[ii: ii + block]]
-
-            cached_samples_dict[ii] = subset_samples
-
-            ii += block
-            pbar.update(len(subset_samples))
-        pbar.close()
-
-        if pool is not None:
-            pool.close()
-            pool.join()
-
-        new_samples = np.concatenate(
-            [np.array(val) for key, val in cached_samples_dict.items() if key != "_samples"]
-        )
-
-        for ii, key in \
-                enumerate([f'{ifo.name}_log_likelihood' for ifo in likelihood.interferometers]):
-            samples[key] = new_samples[:, ii]
-
+    if likelihood is None:
+        logger.debug('Not computing per-detector log likelihoods.')
         return samples
 
-    else:
+    if not callable(likelihood.compute_per_detector_log_likelihood):
         logger.debug('Not computing per-detector log likelihoods.')
+        return samples
+
+    if isinstance(samples, dict):
+        likelihood.parameters.update(samples)
+        samples = likelihood.compute_per_detector_log_likelihood()
+        return samples
+
+    elif not isinstance(samples, DataFrame):
+        raise ValueError("Unable to handle input samples of type {}".format(type(samples)))
+
+    logger.info('Computing per-detector log likelihoods.')
+    new_samples = _run_function_with_pool(
+        func=_compute_per_detector_log_likelihoods,
+        samples=samples,
+        likelihood=likelihood,
+        label="per_detector_likelihoods",
+        npool=npool,
+        block=block,
+        use_cache=use_cache,
+    )
+
+    for ii, key in \
+            enumerate([f'{ifo.name}_log_likelihood' for ifo in likelihood.interferometers]):
+        samples[key] = new_samples[:, ii]
+
+    return samples
+
+
+def _run_function_with_pool(func, samples, likelihood, label, npool=1, block=10, use_cache=True):
+    from tqdm.auto import tqdm
+
+    try:
+        cache_filename = f"{likelihood.outdir}/.{likelihood.label}_{label}_cache.pickle"
+    except AttributeError:
+        logger.warning("Likelihood has no outdir and label attribute: caching disabled")
+        use_cache = False
+
+    if use_cache and os.path.exists(cache_filename) and not command_line_args.clean:
+        try:
+            with open(cache_filename, "rb") as f:
+                cached_samples_dict = pickle.load(f)
+        except EOFError:
+            logger.warning("Cache file is empty")
+            cached_samples_dict = None
+
+        # Check the samples are identical between the cache and current
+        if (cached_samples_dict is not None) and (cached_samples_dict["_samples"].equals(samples)):
+            # Calculate reconstruction percentage and print a log message
+            nsamples_converted = np.sum(
+                [len(val) for key, val in cached_samples_dict.items() if key != "_samples"]
+            )
+            perc = 100 * nsamples_converted / len(cached_samples_dict["_samples"])
+            logger.info(f'Using cached {label} with {perc:0.1f}% converted.')
+        else:
+            logger.info("Cached samples dict out of date, ignoring")
+            cached_samples_dict = dict(_samples=samples)
+
+    else:
+        # Initialize cache dict
+        cached_samples_dict = dict(_samples=samples)
+
+    # Set up the multiprocessing
+    if npool > 1:
+        from ..core.sampler.base_sampler import _initialize_global_variables
+        pool = multiprocessing.Pool(
+            processes=npool,
+            initializer=_initialize_global_variables,
+            initargs=(likelihood, None, None, False),
+        )
+        logger.info(
+            "Using a pool with size {} for nsamples={}"
+            .format(npool, len(samples))
+        )
+    else:
+        from ..core.sampler.base_sampler import _sampling_convenience_dump
+        _sampling_convenience_dump.likelihood = likelihood
+        pool = None
+
+    fill_args = [(ii, row) for ii, row in samples.iterrows()]
+    ii = 0
+    pbar = tqdm(total=len(samples), file=sys.stdout)
+    while ii < len(samples):
+        if ii in cached_samples_dict:
+            ii += block
+            pbar.update(block)
+            continue
+
+        if pool is not None:
+            subset_samples = pool.map(func, fill_args[ii: ii + block])
+        else:
+            subset_samples = [list(func(xx)) for xx in fill_args[ii: ii + block]]
+
+        cached_samples_dict[ii] = subset_samples
+
+        if use_cache:
+            safe_file_dump(cached_samples_dict, cache_filename, "pickle")
+
+        ii += block
+        pbar.update(len(subset_samples))
+    pbar.close()
+
+    if pool is not None:
+        pool.close()
+        pool.join()
+
+    new_samples = np.concatenate(
+        [np.array(val) for key, val in cached_samples_dict.items() if key != "_samples"]
+    )
+    return new_samples
 
 
 def _compute_per_detector_log_likelihoods(args):
@@ -1616,89 +1644,16 @@ def generate_posterior_samples_from_marginalized_likelihood(
         return samples
     elif not isinstance(samples, DataFrame):
         raise ValueError("Unable to handle input samples of type {}".format(type(samples)))
-    from tqdm.auto import tqdm
 
     logger.info('Reconstructing marginalised parameters.')
-
-    try:
-        cache_filename = f"{likelihood.outdir}/.{likelihood.label}_generate_posterior_cache.pickle"
-    except AttributeError:
-        logger.warning("Likelihood has no outdir and label attribute: caching disabled")
-        use_cache = False
-
-    if use_cache and os.path.exists(cache_filename) and not command_line_args.clean:
-        try:
-            with open(cache_filename, "rb") as f:
-                cached_samples_dict = pickle.load(f)
-        except EOFError:
-            logger.warning("Cache file is empty")
-            cached_samples_dict = None
-
-        # Check the samples are identical between the cache and current
-        if (cached_samples_dict is not None) and (cached_samples_dict["_samples"].equals(samples)):
-            # Calculate reconstruction percentage and print a log message
-            nsamples_converted = np.sum(
-                [len(val) for key, val in cached_samples_dict.items() if key != "_samples"]
-            )
-            perc = 100 * nsamples_converted / len(cached_samples_dict["_samples"])
-            logger.info(f'Using cached reconstruction with {perc:0.1f}% converted.')
-        else:
-            logger.info("Cached samples dict out of date, ignoring")
-            cached_samples_dict = dict(_samples=samples)
-
-    else:
-        # Initialize cache dict
-        cached_samples_dict = dict()
-
-        # Store samples to convert for checking
-        cached_samples_dict["_samples"] = samples
-
-    # Set up the multiprocessing
-    if npool > 1:
-        from ..core.sampler.base_sampler import _initialize_global_variables
-        pool = multiprocessing.Pool(
-            processes=npool,
-            initializer=_initialize_global_variables,
-            initargs=(likelihood, None, None, False),
-        )
-        logger.info(
-            "Using a pool with size {} for nsamples={}"
-            .format(npool, len(samples))
-        )
-    else:
-        from ..core.sampler.base_sampler import _sampling_convenience_dump
-        _sampling_convenience_dump.likelihood = likelihood
-        pool = None
-
-    fill_args = [(ii, row) for ii, row in samples.iterrows()]
-    ii = 0
-    pbar = tqdm(total=len(samples), file=sys.stdout)
-    while ii < len(samples):
-        if ii in cached_samples_dict:
-            ii += block
-            pbar.update(block)
-            continue
-
-        if pool is not None:
-            subset_samples = pool.map(fill_sample, fill_args[ii: ii + block])
-        else:
-            subset_samples = [list(fill_sample(xx)) for xx in fill_args[ii: ii + block]]
-
-        cached_samples_dict[ii] = subset_samples
-
-        if use_cache:
-            safe_file_dump(cached_samples_dict, cache_filename, "pickle")
-
-        ii += block
-        pbar.update(len(subset_samples))
-    pbar.close()
-
-    if pool is not None:
-        pool.close()
-        pool.join()
-
-    new_samples = np.concatenate(
-        [np.array(val) for key, val in cached_samples_dict.items() if key != "_samples"]
+    new_samples = _run_function_with_pool(
+        func=fill_sample,
+        samples=samples,
+        likelihood=likelihood,
+        label="generate_posterior",
+        npool=npool,
+        block=block,
+        use_cache=use_cache,
     )
 
     for ii, key in enumerate(marginalized_parameters):
