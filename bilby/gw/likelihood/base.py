@@ -236,7 +236,7 @@ class GravitationalWaveTransient(Likelihood):
                     "waveform_generator.".format(attribute))
             setattr(self.waveform_generator, attribute, ifo_attr)
 
-    def calculate_snrs(self, waveform_polarizations, interferometer):
+    def calculate_snrs(self, waveform_polarizations, interferometer, return_array=True):
         """
         Compute the snrs
 
@@ -309,6 +309,9 @@ class GravitationalWaveTransient(Likelihood):
                 self.calibration_abs_draws[interferometer.name].T
             )
 
+        if return_array is False:
+            d_inner_h_array = None
+            optimal_snr_squared_array = None
         return self._CalculatedSNRs(
             d_inner_h=d_inner_h,
             optimal_snr_squared=optimal_snr_squared.real,
