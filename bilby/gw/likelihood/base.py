@@ -241,11 +241,21 @@ class GravitationalWaveTransient(Likelihood):
         Compute the snrs
 
         Parameters
-        ==========
+        ----------
         waveform_polarizations: dict
             A dictionary of waveform polarizations and the corresponding array
         interferometer: bilby.gw.detector.Interferometer
             The bilby interferometer object
+        return_array: bool
+            If true, calculate and return internal array objects
+            (d_inner_h_array and optimal_snr_squared_array), otherwise
+            these are returned as None.
+
+        Returns
+        -------
+        calculated_snrs: _CalculatedSNRs
+            An object containing the SNR quantities and (if return_array=True)
+            the internal array objects.
 
         """
         signal = self._compute_full_waveform(
@@ -266,7 +276,10 @@ class GravitationalWaveTransient(Likelihood):
 
         normalization = 4 / self.waveform_generator.duration
 
-        if self.time_marginalization and self.calibration_marginalization:
+        if return_array is False:
+            d_inner_h_array = None
+            optimal_snr_squared_array = None
+        elif self.time_marginalization and self.calibration_marginalization:
 
             d_inner_h_integrand = np.tile(
                 interferometer.frequency_domain_strain.conjugate() * signal /
@@ -309,9 +322,6 @@ class GravitationalWaveTransient(Likelihood):
                 self.calibration_abs_draws[interferometer.name].T
             )
 
-        if return_array is False:
-            d_inner_h_array = None
-            optimal_snr_squared_array = None
         return self._CalculatedSNRs(
             d_inner_h=d_inner_h,
             optimal_snr_squared=optimal_snr_squared.real,
