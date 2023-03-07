@@ -394,16 +394,7 @@ class ROQGravitationalWaveTransient(GravitationalWaveTransient):
     def waveform_generator(self, waveform_generator):
         self._waveform_generator = waveform_generator
 
-    def calculate_snrs(self, waveform_polarizations, interferometer):
-        """
-        Compute the snrs for ROQ
-
-        Parameters
-        ==========
-        waveform_polarizations: waveform
-        interferometer: bilby.gw.detector.Interferometer
-
-        """
+    def calculate_snrs(self, waveform_polarizations, interferometer, return_array=True):
         if self.time_marginalization:
             time_ref = self._beam_pattern_reference_time
         else:
@@ -458,7 +449,7 @@ class ROQGravitationalWaveTransient(GravitationalWaveTransient):
             with np.errstate(invalid="ignore"):
                 complex_matched_filter_snr = d_inner_h / (optimal_snr_squared**0.5)
 
-        if self.time_marginalization:
+        if return_array and self.time_marginalization:
             ifo_times = self._times - interferometer.strain_data.start_time
             ifo_times += dt
             if self.jitter_time:
