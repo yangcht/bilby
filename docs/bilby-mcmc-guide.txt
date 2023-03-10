@@ -134,6 +134,12 @@ of 2106.08730.
    If these are not installed, but the proposals are used a warning message is
    printed and the proposals ignored.
 
+.. note::
+   As of version 2.0.1, `bilby_mcmc` proposals by default ignore the reflective
+   and periodic boundaries used elsewhere as these where found to break detailed
+   balance.
+
+
 Proposal Cycles: custom
 -----------------------
 

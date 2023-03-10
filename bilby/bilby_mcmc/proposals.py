@@ -49,12 +49,13 @@ class BaseProposal(object):
     _rejected = 0
     __metaclass__ = ABCMeta
 
-    def __init__(self, priors, weight=1, subset=None):
+    def __init__(self, priors, weight=1, subset=None, use_boundary=False):
         self._str_attrs = ["acceptance_ratio", "n"]
 
         self.parameters = priors.non_fixed_keys
         self.weight = weight
         self.subset = subset
+        self.use_boundary = use_boundary
 
         # Restrict to a subset
         if self.subset is not None:
@@ -131,7 +132,8 @@ class BaseProposal(object):
 
     def __call__(self, chain):
         sample, log_factor = self.propose(chain)
-        sample = self.apply_boundaries(sample)
+        if self.use_boundary:
+            sample = self.apply_boundaries(sample)
         return sample, log_factor
 
     @abstractmethod
@@ -945,7 +947,8 @@ class EnsembleProposal(BaseProposal):
 
     def __call__(self, chain, chain_complement):
         sample, log_factor = self.propose(chain, chain_complement)
-        sample = self.apply_boundaries(sample)
+        if self.use_boundary:
+            sample = self.apply_boundaries(sample)
         return sample, log_factor
 
 
