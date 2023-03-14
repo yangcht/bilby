@@ -1,6 +1,5 @@
 import unittest
 from copy import deepcopy
-from unittest.mock import MagicMock
 
 from attr import define
 import bilby
@@ -22,9 +21,22 @@ class Dummy:
     loglstar: float = -1
 
 
+class DummyLikelihood(bilby.core.likelihood.Likelihood):
+    """
+    A trivial likelihood used for testing. Add some randomness so the likelihood
+    isn't flat everywhere as that can cause issues for nested samplers.
+    """
+
+    def __init__(self):
+        super().__init__(dict())
+
+    def log_likelihood(self):
+        return np.random.uniform(0, 0.01)
+
+
 class TestDynesty(unittest.TestCase):
     def setUp(self):
-        self.likelihood = MagicMock()
+        self.likelihood = DummyLikelihood()
         self.priors = bilby.core.prior.PriorDict(
             dict(a=bilby.core.prior.Uniform(0, 1), b=bilby.core.prior.Uniform(0, 1))
         )
@@ -82,6 +94,9 @@ class TestDynesty(unittest.TestCase):
         )
         self.assertEqual([0, 4], self.sampler.kwargs["periodic"])
         self.assertEqual([1, 3], self.sampler.kwargs["reflective"])
+
+    def test_run_test_runs(self):
+        self.sampler._run_test()
 
 
 class ProposalsTest(unittest.TestCase):
@@ -242,6 +257,7 @@ class TestEstimateNMCMC(unittest.TestCase):
         safety * (2 / accept_ratio - 1)
         """
         sampler = dynesty_utils.AcceptanceTrackingRWalk()
+        dynesty_utils.AcceptanceTrackingRWalk.old_act = None
         for _ in range(10):
             accept_ratio = np.random.uniform()
             safety = np.random.randint(2, 8)

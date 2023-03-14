@@ -450,32 +450,32 @@ class Dynesty(NestedSampler):
                 f"An average of {2 * self.nact} steps will be accepted up to chain length "
                 f"{self.maxmcmc}."
             )
-            from .dynesty_utils import sample_rwalk_bilby
+            from .dynesty_utils import AcceptanceTrackingRWalk
 
             if self.kwargs["walks"] > self.maxmcmc:
                 raise DynestySetupError("You have maxmcmc < walks (minimum mcmc)")
             if self.nact < 1:
                 raise DynestySetupError("Unable to run with nact < 1")
-            dynesty.nestedsamplers._SAMPLING["rwalk"] = sample_rwalk_bilby
+            AcceptanceTrackingRWalk.old_act = None
+            dynesty.nestedsamplers._SAMPLING["rwalk"] = AcceptanceTrackingRWalk()
         elif sample == "acceptance-walk":
             logger.info(
                 "Using the bilby-implemented rwalk sampling with an average of "
                 f"{self.naccept} accepted steps per MCMC and maximum length {self.maxmcmc}"
             )
-            from .dynesty_utils import fixed_length_rwalk_bilby
+            from .dynesty_utils import FixedRWalk
 
-            dynesty.nestedsamplers._SAMPLING[
-                "acceptance-walk"
-            ] = fixed_length_rwalk_bilby
+            dynesty.nestedsamplers._SAMPLING["acceptance-walk"] = FixedRWalk()
         elif sample == "act-walk":
             logger.info(
                 "Using the bilby-implemented rwalk sampling tracking the "
                 f"autocorrelation function and thinning by "
                 f"{self.nact} with maximum length {self.nact * self.maxmcmc}"
             )
-            from .dynesty_utils import bilby_act_rwalk
+            from .dynesty_utils import ACTTrackingRWalk
 
-            dynesty.nestedsamplers._SAMPLING["act-walk"] = bilby_act_rwalk
+            ACTTrackingRWalk._cache = list()
+            dynesty.nestedsamplers._SAMPLING["act-walk"] = ACTTrackingRWalk()
         elif sample == "rwalk_dynesty":
             sample = sample.strip("_dynesty")
             self.kwargs["sample"] = sample
@@ -901,9 +901,11 @@ class Dynesty(NestedSampler):
         """Run the sampler very briefly as a sanity test that it works."""
         import pandas as pd
 
+        self._set_sampling_method()
+        self._setup_pool()
         self.sampler = self.sampler_init(
-            loglikelihood=self.log_likelihood,
-            prior_transform=self.prior_transform,
+            loglikelihood=_log_likelihood_wrapper,
+            prior_transform=_prior_transform_wrapper,
             ndim=self.ndim,
             **self.sampler_init_kwargs,
         )
@@ -915,6 +917,8 @@ class Dynesty(NestedSampler):
 
             self.pbar = tqdm(file=sys.stdout, initial=self.sampler.it)
         self.sampler.run_nested(**sampler_kwargs)
+        self._close_pool()
+
         if self.pbar is not None:
             self.pbar = self.pbar.close()
             print("")
