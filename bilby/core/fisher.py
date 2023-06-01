@@ -66,7 +66,7 @@ class FisherMatrixPosteriorEstimator(object):
 
         self.mean = np.array(list(sample.values()))
         self.iFIM = self.calculate_iFIM(sample)
-        return np.random.multivariate_normal(self.mean, self.iFIM, n)
+        return np.random.multivariate_normal(self.mean, 2 * self.iFIM, n)
 
     def sample_dataframe(self, sample, n=1):
         samples = self.sample_array(sample, n)

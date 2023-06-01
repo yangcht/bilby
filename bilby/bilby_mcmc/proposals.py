@@ -835,7 +835,7 @@ class FisherMatrixProposal(AdaptiveGaussianProposal):
             self.steps_since_update = 0
 
         jump = self.scale * np.random.multivariate_normal(
-            self.mean, self.iFIM, check_valid="ignore"
+            self.mean, 2 * self.iFIM, check_valid="ignore"
         )
 
         for key, val in zip(self.parameters, jump):
