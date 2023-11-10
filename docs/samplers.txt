@@ -57,7 +57,6 @@ Nested Samplers
 - Nestle :code:`bilby.core.sampler.nestle.Nestle`
 - CPNest :code:`bilby.core.sampler.cpnest.Cpnest`
 - PyMultiNest :code:`bilby.core.sampler.pymultinest.Pymultinest`
-- PyPolyChord :code:`bilby.core.sampler.polychord.PyPolyChord`
 - UltraNest :code:`bilby.core.sampler.ultranest.Ultranest`
 - DNest4 :code:`bilby.core.sampler.dnest4.DNest4`
 - Nessai :code:`bilby.core.sampler.nessai.Nessai`
@@ -100,26 +99,6 @@ be found in the at the top-level of `the repository
 <https://git.ligo.org/lscsoft/bilby>`_ (Note: if you installed from pip, you
 can simply download that file and use the command above).
 
-
-Installing PyPolyChord
-======================
-
-If you want to use the `PyPolyChord` sampler, you first need the
-PolyChord library to be installed to work properly. An image of PolyChord can be found on github.
-Clone the following repository onto your system. Navigate to the folder you want to install PolyChord in and run:
-
-.. code-block:: console
-
-   $ git clone https://github.com/PolyChord/PolyChordLite.git
-
-Then navigate into the PolyChord directory and install PolyChord/PyPolyChord with
-
-.. code-block:: console
-
-   $ make pypolychord MPI=
-   $ python setup.py install --user
-
-Add a number after `MPI=` to compile with `MPI`. Leave it like it is if you don't wish to compile with MPI.
 
 Installing pymultinest
 ======================

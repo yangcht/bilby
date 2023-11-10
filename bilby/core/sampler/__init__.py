@@ -18,7 +18,6 @@ from .fake_sampler import FakeSampler
 from .kombine import Kombine
 from .nessai import Nessai
 from .nestle import Nestle
-from .polychord import PyPolyChord
 from .ptemcee import Ptemcee
 from .ptmcmc import PTMCMCSampler
 from .pymc import Pymc
@@ -40,7 +39,6 @@ IMPLEMENTED_SAMPLERS = {
     "ptmcmcsampler": PTMCMCSampler,
     "pymc": Pymc,
     "pymultinest": Pymultinest,
-    "pypolychord": PyPolyChord,
     "ultranest": Ultranest,
     "zeus": Zeus,
     "fake_sampler": FakeSampler,
