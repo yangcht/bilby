@@ -72,12 +72,13 @@ class PowerSpectralDensity(object):
         return False
 
     def __repr__(self):
-        if self.asd_file is not None or self.psd_file is not None:
-            return self.__class__.__name__ + '(psd_file=\'{}\', asd_file=\'{}\')' \
-                .format(self.psd_file, self.asd_file)
+        base = f"{self.__class__.__module__}.{self.__class__.__name__}"
+        if self.asd_file is not None:
+            return f'{base}(asd_file="{self.asd_file}")'
+        elif self.psd_file is not None:
+            return f'{base}(psd_file="{self.psd_file}")'
         else:
-            return self.__class__.__name__ + '(frequency_array={}, psd_array={}, asd_array={})' \
-                .format(self.frequency_array, self.psd_array, self.asd_array)
+            return utils.auto_repr(self)
 
     @staticmethod
     def from_amplitude_spectral_density_file(asd_file):

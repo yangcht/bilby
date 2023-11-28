@@ -4,7 +4,11 @@ import numpy as np
 from scipy.special import gammaln, xlogy
 from scipy.stats import multivariate_normal
 
-from .utils import infer_parameters_from_function, infer_args_from_function_except_n_args
+from .utils import (
+    auto_repr,
+    infer_parameters_from_function,
+    infer_args_from_function_except_n_args,
+)
 
 
 class Likelihood(object):
@@ -22,7 +26,7 @@ class Likelihood(object):
         self._marginalized_parameters = []
 
     def __repr__(self):
-        return self.__class__.__name__ + '(parameters={})'.format(self.parameters)
+        return auto_repr(self)
 
     def log_likelihood(self):
         """
@@ -117,9 +121,6 @@ class Analytical1DLikelihood(Likelihood):
         self._function_keys = [key for key in parameters if key not in kwargs]
         self.kwargs = kwargs
 
-    def __repr__(self):
-        return self.__class__.__name__ + '(x={}, y={}, func={})'.format(self.x, self.y, self.func.__name__)
-
     @property
     def func(self):
         """ Make func read-only """
@@ -203,10 +204,6 @@ class GaussianLikelihood(Analytical1DLikelihood):
                        np.log(2 * np.pi * self.sigma**2) / 2)
         return log_l
 
-    def __repr__(self):
-        return self.__class__.__name__ + '(x={}, y={}, func={}, sigma={})' \
-            .format(self.x, self.y, self.func.__name__, self.sigma)
-
     @property
     def sigma(self):
         """
@@ -268,9 +265,6 @@ class PoissonLikelihood(Analytical1DLikelihood):
         else:
             return np.sum(-rate + self.y * np.log(rate) - gammaln(self.y + 1))
 
-    def __repr__(self):
-        return Analytical1DLikelihood.__repr__(self)
-
     @property
     def y(self):
         """ Property assures that y-value is a positive integer. """
@@ -310,9 +304,6 @@ class ExponentialLikelihood(Analytical1DLikelihood):
         if np.any(mu < 0.):
             return -np.inf
         return -np.sum(np.log(mu) + (self.y / mu))
-
-    def __repr__(self):
-        return Analytical1DLikelihood.__repr__(self)
 
     @property
     def y(self):
@@ -378,11 +369,6 @@ class StudentTLikelihood(Analytical1DLikelihood):
                    np.log(self.lam / (nu * np.pi)) / 2 +
                    gammaln((nu + 1) / 2) - gammaln(nu / 2))
         return log_l
-
-    def __repr__(self):
-        base_string = '(x={}, y={}, func={}, nu={}, sigma={})'
-        return self.__class__.__name__ + base_string.format(
-            self.x, self.y, self.func.__name__, self.nu, self.sigma)
 
     @property
     def lam(self):

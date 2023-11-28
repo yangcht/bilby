@@ -86,25 +86,7 @@ class WaveformGenerator(object):
         )
 
     def __repr__(self):
-        if self.frequency_domain_source_model is not None:
-            fdsm_name = self.frequency_domain_source_model.__name__
-        else:
-            fdsm_name = None
-        if self.time_domain_source_model is not None:
-            tdsm_name = self.time_domain_source_model.__name__
-        else:
-            tdsm_name = None
-        if self.parameter_conversion is None:
-            param_conv_name = None
-        else:
-            param_conv_name = self.parameter_conversion.__name__
-
-        return self.__class__.__name__ + '(duration={}, sampling_frequency={}, start_time={}, ' \
-                                         'frequency_domain_source_model={}, time_domain_source_model={}, ' \
-                                         'parameter_conversion={}, ' \
-                                         'waveform_arguments={})'\
-            .format(self.duration, self.sampling_frequency, self.start_time, fdsm_name, tdsm_name,
-                    param_conv_name, self.waveform_arguments)
+        return utils.auto_repr(self)
 
     def frequency_domain_strain(self, parameters=None):
         """ Wrapper to source_model.

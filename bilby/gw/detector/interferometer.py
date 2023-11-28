@@ -8,7 +8,7 @@ from bilby_cython.geometry import (
 )
 
 from ...core import utils
-from ...core.utils import docstring, logger, PropertyAccessor, safe_file_dump
+from ...core.utils import auto_repr, docstring, logger, PropertyAccessor, safe_file_dump
 from .. import utils as gwutils
 from .calibration import Recalibrate
 from .geometry import InterferometerGeometry
@@ -102,15 +102,7 @@ class Interferometer(object):
         return False
 
     def __repr__(self):
-        return self.__class__.__name__ + '(name=\'{}\', power_spectral_density={}, minimum_frequency={}, ' \
-                                         'maximum_frequency={}, length={}, latitude={}, longitude={}, elevation={}, ' \
-                                         'xarm_azimuth={}, yarm_azimuth={}, xarm_tilt={}, yarm_tilt={})' \
-            .format(self.name, self.power_spectral_density, float(self.strain_data.minimum_frequency),
-                    float(self.strain_data.maximum_frequency), float(self.geometry.length),
-                    float(self.geometry.latitude), float(self.geometry.longitude),
-                    float(self.geometry.elevation), float(self.geometry.xarm_azimuth),
-                    float(self.geometry.yarm_azimuth), float(self.geometry.xarm_tilt),
-                    float(self.geometry.yarm_tilt))
+        return auto_repr(self)
 
     def set_strain_data_from_gwpy_timeseries(self, time_series):
         """ Set the `Interferometer.strain_data` from a gwpy TimeSeries

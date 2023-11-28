@@ -2,6 +2,7 @@ import numpy as np
 from bilby_cython.geometry import calculate_arm, detector_tensor
 
 from .. import utils as gwutils
+from ...core.utils.introspection import auto_repr
 
 
 class InterferometerGeometry(object):
@@ -58,11 +59,7 @@ class InterferometerGeometry(object):
         return True
 
     def __repr__(self):
-        return self.__class__.__name__ + '(length={}, latitude={}, longitude={}, elevation={}, ' \
-                                         'xarm_azimuth={}, yarm_azimuth={}, xarm_tilt={}, yarm_tilt={})' \
-            .format(float(self.length), float(self.latitude), float(self.longitude),
-                    float(self.elevation), float(self.xarm_azimuth), float(self.yarm_azimuth), float(self.xarm_tilt),
-                    float(self.yarm_tilt))
+        auto_repr(self)
 
     @property
     def latitude(self):

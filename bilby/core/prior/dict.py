@@ -53,6 +53,14 @@ class PriorDict(dict):
         else:
             self.conversion_function = self.default_conversion_function
 
+    def __repr__(self):
+        repr_str = f"{self.__class__.__module__}.{self.__class__.__name__}("
+        for key in self.keys():
+            repr_str += f"\n  {key}={self[key]},"
+        repr_str += f"\n  conversion_function={self.conversion_function.__name__}"
+        repr_str += "\n)"
+        return repr_str
+
     def evaluate_constraints(self, sample):
         out_sample = self.conversion_function(sample)
         prob = 1

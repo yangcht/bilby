@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 
+from ...core.utils.introspection import auto_repr
 from ...core.utils.log import logger
 from ...core.prior.dict import PriorDict
 from ..prior import CalibrationPriorDict
@@ -119,7 +120,7 @@ class Recalibrate(object):
         self.prefix = prefix
 
     def __repr__(self):
-        return self.__class__.__name__ + '(prefix=\'{}\')'.format(self.prefix)
+        return auto_repr(self)
 
     def get_calibration_factor(self, frequency_array, **params):
         """Apply calibration model
@@ -222,10 +223,6 @@ class CubicSpline(Recalibrate):
     @property
     def log_spline_points(self):
         return self._log_spline_points
-
-    def __repr__(self):
-        return self.__class__.__name__ + '(prefix=\'{}\', minimum_frequency={}, maximum_frequency={}, n_points={})'\
-            .format(self.prefix, self.minimum_frequency, self.maximum_frequency, self.n_points)
 
     def _evaluate_spline(self, kind, a, b, c, d, previous_nodes):
         """Evaluate Eq. (1) in https://dcc.ligo.org/LIGO-T2300140"""

@@ -207,14 +207,6 @@ class GravitationalWaveTransient(Likelihood):
             self._setup_calibration_marginalization(calibration_lookup_table, priors)
             self._marginalized_parameters.append('recalib_index')
 
-    def __repr__(self):
-        return self.__class__.__name__ + '(interferometers={},\n\twaveform_generator={},\n\ttime_marginalization={}, ' \
-                                         'distance_marginalization={}, phase_marginalization={}, ' \
-                                         'calibration_marginalization={}, priors={})' \
-            .format(self.interferometers, self.waveform_generator, self.time_marginalization,
-                    self.distance_marginalization, self.phase_marginalization, self.calibration_marginalization,
-                    self.priors)
-
     def _check_set_duration_and_sampling_frequency_of_waveform_generator(self):
         """ Check the waveform_generator has the same duration and
         sampling_frequency as the interferometers. If they are unset, then

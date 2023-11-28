@@ -149,3 +149,68 @@ class PropertyAccessor(object):
 
     def __set__(self, instance, value):
         setattr(getattr(instance, self.container_instance_name), self.property_name, value)
+
+
+class _Repr:
+    """
+    Automatically generates a __repr__ string for a class.
+    We use the inspect module to look at the __init__ function of the class
+    and then look for attributes of the object with the same name as the
+    arguments of the __init__ function. If they exist, we add them to the
+    repr string.
+
+    This takes into account nesting for class arguments that are themselves
+    classes.
+
+    Parameters
+    ==========
+    obj: object
+        An instance of the class to generate the __repr__ string for.
+
+    Returns
+    =======
+    repr: str
+        The string representation of the object.
+    """
+
+    level = 0
+    indent = "  "
+
+    def __call__(self, obj):
+        args = infer_args_from_method(obj.__init__)
+        repr_string = f"{obj.__module__}.{obj.__class__.__name__}("
+        if len(args) == 0:
+            repr_string += ")"
+        elif len(args) == 1:
+            arg = args[0]
+            value = _parse_single(arg, obj)
+            repr_string += f"{arg}={value})"
+        else:
+            repr_string += "\n"
+            self.level += 1
+            for arg in args:
+                try:
+                    value = _parse_single(arg, obj)
+                except AttributeError:
+                    continue
+                repr_string += f"{self.indent * self.level}{arg}={value},\n"
+            self.level -= 1
+            repr_string = repr_string.strip("\n").strip(",") + f"\n{self.indent * self.level})"
+        return repr_string
+
+
+def _parse_single(arg, obj):
+    if hasattr(obj, arg):
+        value = getattr(obj, arg)
+    elif hasattr(obj, f"_{arg}"):
+        value = getattr(obj, f"_{arg}")
+    else:
+        raise AttributeError
+    if isinstance(value, (types.FunctionType, types.MethodType)):
+        value = f"{value.__module__}.{value.__name__}"
+    elif isinstance(value, str):
+        value = f'"{value}"'
+    return value
+
+
+auto_repr = _Repr()
