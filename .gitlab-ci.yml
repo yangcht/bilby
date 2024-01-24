@@ -166,7 +166,7 @@ python-3.10:
 
 python-3.11:
   <<: *unit-test
-  needs: ["basic-3.11", "precommits-py3.11"]
+  needs: ["basic-3.11"]
   image: containers.ligo.org/lscsoft/bilby/v2-bilby-python311
 
 .test-sampler: &test-sampler
@@ -188,7 +188,7 @@ python-3.10-samplers:
 
 python-3.11-samplers:
   <<: *test-sampler
-  needs: ["basic-3.11", "precommits-py3.11"]
+  needs: ["basic-3.11"]
   image: containers.ligo.org/lscsoft/bilby/v2-bilby-python311
 
 integration-tests-python-3.10:
@@ -225,7 +225,7 @@ plotting-python-3.10:
 plotting-python-3.11:
   <<: *plotting
   image: containers.ligo.org/lscsoft/bilby/v2-bilby-python311
-  needs: ["basic-3.11", "precommits-py3.11"]
+  needs: ["basic-3.11"]
 
 # ------------------- Docs stage -------------------------------------------
 
