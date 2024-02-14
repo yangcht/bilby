@@ -90,7 +90,7 @@ class Interferometer(object):
         self.strain_data = InterferometerStrainData(
             minimum_frequency=minimum_frequency,
             maximum_frequency=maximum_frequency)
-        self.meta_data = dict()
+        self.meta_data = dict(name=name)
 
     def __eq__(self, other):
         if self.name == other.name and \
@@ -607,7 +607,7 @@ class Interferometer(object):
 
         Returns
         =======
-        float: The matched filter signal to noise ratio squared
+        complex: The matched filter signal to noise ratio
 
         """
         return gwutils.matched_filter_snr(

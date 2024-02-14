@@ -123,6 +123,9 @@ class Dynesty(NestedSampler):
         The proposal methods to use during MCMC. This can be some combination
         of :code:`"diff", "volumetric"`. See the dynesty guide in the Bilby docs
         for more details. default=:code:`["diff"]`.
+    rstate: numpy.random.Generator (None)
+        Instance of a numpy random generator for generating random numbers.
+        Also see :code:`seed` in 'Other Parameters'.
 
     Other Parameters
     ================
@@ -143,7 +146,12 @@ class Dynesty(NestedSampler):
         has no impact on the sampling.
     dlogz: float, (0.1)
         Stopping criteria
+    seed: int (None)
+        Use to seed the random number generator if :code:`rstate` is not
+        specified.
     """
+
+    sampling_seed_key = "seed"
 
     @property
     def _dynesty_init_kwargs(self):
@@ -176,6 +184,7 @@ class Dynesty(NestedSampler):
     def default_kwargs(self):
         kwargs = self._dynesty_init_kwargs
         kwargs.update(self._dynesty_sampler_kwargs)
+        kwargs["seed"] = None
         return kwargs
 
     def __init__(
@@ -265,6 +274,14 @@ class Dynesty(NestedSampler):
             for equiv in self.npool_equiv_kwargs:
                 if equiv in kwargs:
                     kwargs["queue_size"] = kwargs.pop(equiv)
+        if "seed" in kwargs:
+            seed = kwargs.get("seed")
+            if "rstate" not in kwargs:
+                kwargs["rstate"] = np.random.default_rng(seed)
+            else:
+                logger.warning(
+                    "Kwargs contain both 'rstate' and 'seed', ignoring 'seed'."
+                )
 
     def _verify_kwargs_against_default_kwargs(self):
         if not self.kwargs["walks"]:
@@ -446,7 +463,7 @@ class Dynesty(NestedSampler):
 
         if sample == "rwalk":
             logger.info(
-                "Using the bilby-implemented rwalk sample method with ACT estimated walks. "
+                f"Using the bilby-implemented {sample} sample method with ACT estimated walks. "
                 f"An average of {2 * self.nact} steps will be accepted up to chain length "
                 f"{self.maxmcmc}."
             )
@@ -460,7 +477,7 @@ class Dynesty(NestedSampler):
             dynesty.nestedsamplers._SAMPLING["rwalk"] = AcceptanceTrackingRWalk()
         elif sample == "acceptance-walk":
             logger.info(
-                "Using the bilby-implemented rwalk sampling with an average of "
+                f"Using the bilby-implemented {sample} sampling with an average of "
                 f"{self.naccept} accepted steps per MCMC and maximum length {self.maxmcmc}"
             )
             from .dynesty_utils import FixedRWalk
@@ -468,7 +485,7 @@ class Dynesty(NestedSampler):
             dynesty.nestedsamplers._SAMPLING["acceptance-walk"] = FixedRWalk()
         elif sample == "act-walk":
             logger.info(
-                "Using the bilby-implemented rwalk sampling tracking the "
+                f"Using the bilby-implemented {sample} sampling tracking the "
                 f"autocorrelation function and thinning by "
                 f"{self.nact} with maximum length {self.nact * self.maxmcmc}"
             )
@@ -568,6 +585,8 @@ class Dynesty(NestedSampler):
         import dynesty
         from scipy.special import logsumexp
 
+        from ..utils.random import rng
+
         logwts = out["logwt"]
         weights = np.exp(logwts - out["logz"][-1])
         nested_samples = DataFrame(out.samples, columns=self.search_parameter_keys)
@@ -575,7 +594,7 @@ class Dynesty(NestedSampler):
         nested_samples["log_likelihood"] = out.logl
         self.result.nested_samples = nested_samples
         if self.rejection_sample_posterior:
-            keep = weights > np.random.uniform(0, max(weights), len(weights))
+            keep = weights > rng.uniform(0, max(weights), len(weights))
             self.result.samples = out.samples[keep]
             self.result.log_likelihood_evaluations = out.logl[keep]
             logger.info(
@@ -602,6 +621,7 @@ class Dynesty(NestedSampler):
             sampling_time_s=self.sampling_time.seconds,
             ncores=self.kwargs.get("queue_size", 1),
         )
+        self.kwargs["rstate"] = None
 
     def _update_sampling_time(self):
         end_time = datetime.datetime.now()
@@ -715,6 +735,7 @@ class Dynesty(NestedSampler):
                 self.sampler.nqueue = -1
                 self.start_time = self.sampler.kwargs.pop("start_time")
                 self.sampling_time = self.sampler.kwargs.pop("sampling_time")
+                self.sampler.queue_size = self.kwargs["queue_size"]
                 self.sampler.pool = self.pool
                 if self.pool is not None:
                     self.sampler.M = self.pool.map

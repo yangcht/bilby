@@ -398,7 +398,7 @@ def read_frame_file(file_name, start_time, end_time, resample=None, channel=None
             strain = TimeSeries.read(source=file_name, channel=channel, start=start_time, end=end_time, **kwargs)
             loaded = True
             logger.info('Successfully loaded {}.'.format(channel))
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             logger.warning('Channel {} not found. Trying preset channel names'.format(channel))
 
     if loaded is False:
@@ -418,12 +418,12 @@ def read_frame_file(file_name, start_time, end_time, resample=None, channel=None
                                              **kwargs)
                     loaded = True
                     logger.info('Successfully read strain data for channel {}.'.format(channel))
-                except RuntimeError:
+                except (RuntimeError, ValueError):
                     pass
 
     if loaded:
         if resample and (strain.sample_rate.value != resample):
-            strain.resample(resample)
+            strain = strain.resample(resample)
         return strain
     else:
         logger.warning('No data loaded.')
@@ -789,6 +789,160 @@ def lalsim_SimInspiralWaveformParamsInsertTidalLambda2(
 
     return SimInspiralWaveformParamsInsertTidalLambda2(
         waveform_dictionary, lambda_2)
+
+
+def lalsim_SimNeutronStarEOS4ParamSDGammaCheck(g0, g1, g2, g3):
+    from lalsimulation import SimNeutronStarEOS4ParamSDGammaCheck
+    try:
+        g0 = float(g0)
+        g1 = float(g1)
+        g2 = float(g2)
+        g3 = float(g3)
+    except ValueError:
+        raise ValueError("Unable to convert EOS spectral parameters to floats")
+    except TypeError:
+        raise TypeError("Unable to convert EOS spectral parameters to floats")
+
+    return SimNeutronStarEOS4ParamSDGammaCheck(g0, g1, g2, g3)
+
+
+def lalsim_SimNeutronStarEOS4ParameterSpectralDecomposition(g0, g1, g2, g3):
+    from lalsimulation import SimNeutronStarEOS4ParameterSpectralDecomposition
+    try:
+        g0 = float(g0)
+        g1 = float(g1)
+        g2 = float(g2)
+        g3 = float(g3)
+    except ValueError:
+        raise ValueError("Unable to convert EOS spectral parameters to floats")
+    except TypeError:
+        raise TypeError("Unable to convert EOS spectral parameters to floats")
+
+    return SimNeutronStarEOS4ParameterSpectralDecomposition(g0, g1, g2, g3)
+
+
+def lalsim_SimNeutronStarEOS4ParamSDViableFamilyCheck(g0, g1, g2, g3):
+    from lalsimulation import SimNeutronStarEOS4ParamSDViableFamilyCheck
+    try:
+        g0 = float(g0)
+        g1 = float(g1)
+        g2 = float(g2)
+        g3 = float(g3)
+    except ValueError:
+        raise ValueError("Unable to convert EOS spectral parameters to floats")
+    except TypeError:
+        raise TypeError("Unable to convert EOS spectral parameters to floats")
+
+    return SimNeutronStarEOS4ParamSDViableFamilyCheck(g0, g1, g2, g3)
+
+
+def lalsim_SimNeutronStarEOS3PieceDynamicPolytrope(g0, log10p1_si, g1, log10p2_si, g2):
+    from lalsimulation import SimNeutronStarEOS3PieceDynamicPolytrope
+    try:
+        g0 = float(g0)
+        g1 = float(g1)
+        g2 = float(g2)
+        log10p1_si = float(log10p1_si)
+        log10p2_si = float(log10p2_si)
+    except ValueError:
+        raise ValueError("Unable to convert EOS polytrope parameters to floats")
+    except TypeError:
+        raise TypeError("Unable to convert EOS polytrope parameters to floats")
+
+    return SimNeutronStarEOS3PieceDynamicPolytrope(g0, log10p1_si, g1, log10p2_si, g2)
+
+
+def lalsim_SimNeutronStarEOS3PieceCausalAnalytic(v1, log10p1_si, v2, log10p2_si, v3):
+    from lalsimulation import SimNeutronStarEOS3PieceCausalAnalytic
+    try:
+        v1 = float(v1)
+        v2 = float(v2)
+        v3 = float(v3)
+        log10p1_si = float(log10p1_si)
+        log10p2_si = float(log10p2_si)
+    except ValueError:
+        raise ValueError("Unable to convert EOS causal parameters to floats")
+    except TypeError:
+        raise TypeError("Unable to convert EOS causal parameters to floats")
+
+    return SimNeutronStarEOS3PieceCausalAnalytic(v1, log10p1_si, v2, log10p2_si, v3)
+
+
+def lalsim_SimNeutronStarEOS3PDViableFamilyCheck(p0, log10p1_si, p1, log10p2_si, p2, causal):
+    from lalsimulation import SimNeutronStarEOS3PDViableFamilyCheck
+    try:
+        p0 = float(p0)
+        p1 = float(p1)
+        p2 = float(p2)
+        log10p1_si = float(log10p1_si)
+        log10p2_si = float(log10p2_si)
+        causal = int(causal)
+    except ValueError:
+        raise ValueError("Unable to convert EOS parameters to floats or int")
+    except TypeError:
+        raise TypeError("Unable to convert EOS parameters to floats or int")
+
+    return SimNeutronStarEOS3PDViableFamilyCheck(p0, log10p1_si, p1, log10p2_si, p2, causal)
+
+
+def lalsim_CreateSimNeutronStarFamily(eos):
+    from lalsimulation import CreateSimNeutronStarFamily
+
+    return CreateSimNeutronStarFamily(eos)
+
+
+def lalsim_SimNeutronStarEOSMaxPseudoEnthalpy(eos):
+    from lalsimulation import SimNeutronStarEOSMaxPseudoEnthalpy
+
+    return SimNeutronStarEOSMaxPseudoEnthalpy(eos)
+
+
+def lalsim_SimNeutronStarEOSSpeedOfSoundGeometerized(max_pseudo_enthalpy, eos):
+    from lalsimulation import SimNeutronStarEOSSpeedOfSoundGeometerized
+    try:
+        max_pseudo_enthalpy = float(max_pseudo_enthalpy)
+    except ValueError:
+        raise ValueError("Unable to convert max_pseudo_enthalpy to float.")
+    except TypeError:
+        raise TypeError("Unable to convert max_pseudo_enthalpy to float.")
+
+    return SimNeutronStarEOSSpeedOfSoundGeometerized(max_pseudo_enthalpy, eos)
+
+
+def lalsim_SimNeutronStarFamMinimumMass(fam):
+    from lalsimulation import SimNeutronStarFamMinimumMass
+
+    return SimNeutronStarFamMinimumMass(fam)
+
+
+def lalsim_SimNeutronStarMaximumMass(fam):
+    from lalsimulation import SimNeutronStarMaximumMass
+
+    return SimNeutronStarMaximumMass(fam)
+
+
+def lalsim_SimNeutronStarRadius(mass_in_SI, fam):
+    from lalsimulation import SimNeutronStarRadius
+    try:
+        mass_in_SI = float(mass_in_SI)
+    except ValueError:
+        raise ValueError("Unable to convert mass_in_SI to float.")
+    except TypeError:
+        raise TypeError("Unable to convert mass_in_SI to float.")
+
+    return SimNeutronStarRadius(mass_in_SI, fam)
+
+
+def lalsim_SimNeutronStarLoveNumberK2(mass_in_SI, fam):
+    from lalsimulation import SimNeutronStarLoveNumberK2
+    try:
+        mass_in_SI = float(mass_in_SI)
+    except ValueError:
+        raise ValueError("Unable to convert mass_in_SI to float.")
+    except TypeError:
+        raise TypeError("Unable to convert mass_in_SI to float.")
+
+    return SimNeutronStarLoveNumberK2(mass_in_SI, fam)
 
 
 def spline_angle_xform(delta_psi):

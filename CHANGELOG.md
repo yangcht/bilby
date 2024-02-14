@@ -1,5 +1,105 @@
 # All notable changes will be documented in this file
 
+## [2.2.2] 2023-11-29
+Version 2.2.2 release of Bilby
+
+This is a bugfix release reverting a change from 2.2.1
+
+### Changes
+- Revert !1284 (!1306)
+
+## [2.2.1] 2023-1111
+Version 2.2.1 release of Bilby
+
+This release is a bugfix release.
+
+### Changes
+- Ensure inteferometer metadata is not empty (!1281)
+- Make interrupted pools exit more quickly (!1284)
+- Fix conditional sampling with DeltaFunction conditions (!1289)
+- The triangular prior raised an error with numpy (!1294)
+- Make sure strain data resampling works (!1295)
+- Dynesty logging (!1296)
+- A bug with saving lists that contain None (!1301)
+- Preparatory fix an upcoming change in dynesty (!1302)
+
+## [2.2.0] 2023-07-24
+Version 2.2.0 release of Bilby
+
+This release contains one new feature and drops support for Python 3.8.
+
+### Added
+- New waveform interface to support the SEOBNRv5 family of waveforms (!1218)
+- Enable default noise + injection function for non-CBC signals (!1263)
+- Fallback to result pickle loading to match result writing (!1291)
+
+### Changes
+- Additional error catching for plotting (!1261, !1271)
+- Improve plotting options for corner plots (!1270)
+- Fix bugs in closing the pool for emcee (!1274)
+- Generalize MPI support (!1278)
+- Fix a bug with saving hdf5 results when conda isn't present (!1290)
+
+### Deprecated
+- Drop support for py38 (!1277)
+
+## [2.1.2] 2023-07-17
+Version 2.1.2 release of Bilby
+
+This is a bugfix release.
+Note that one of the changes will have a significant impact on scripts that rely on
+a seed for random data generation.
+Where users have previously used `np.random.seed` they should now call
+`bilby.core.utils.random.seed`.
+
+### Changes
+- Fix issues related to random number generation with multiprocessing (!1273)
+- Enable cosmological priors to be written/read in our plain text format (!1258)
+- Allow posterior reweighting to be performed when changing the likelihood and the prior (!1260)
+
+## [2.1.1] 2023-04-28
+Version 2.1.1 release of Bilby
+
+Bugfix release
+
+### Changes
+- Fix the matched filter SNR phase for the multiband likelihood (!1253)
+- Bugfix for Fisher matrix proposals in `bilby_mcmc` (!1251)
+- Make the changes to the spline calibration backward compatible, 2.0.2 resume files can't be read with 2.1.0 (!1250)
+
+## [2.1.0] 2023-04-12
+Version 2.1.0 release of Bilby
+
+Minor feature improvements and bug fixes
+
+### Additions
+- Additional parameterizations for equation-of-state inference (!1083, !1240)
+- Add Fisher matrix posterior estimator (!1242)
+
+### Changes
+- Improvements to the bilby-mcmc sampler including a Fisher Information Matrix proposal (!1242)
+- Optimize spline interpolation of calibration uncertainties (!1241)
+- Update LIGO India coordinates record to public DCC (!1246)
+- Make logger disabling work in redundancy test (!1245)
+- Make sure nested samples are data frame (!1244)
+- Minor improvements to the result methods including moving to top level imports (!1243)
+- Fix a bug in the slabspike prior (!1235)
+- Reduce verbosity when setting strain data (!1233)
+- Fix issue with cached results class (!1223)
+
+### Deprecated
+- Reading/writing ROQ weights to json (!1232)
+
+## [2.0.2] 2023-03-21
+Version 2.0.2 release of Bilby
+
+This is a bugfix release after the last major update.
+
+### Changes
+- Fix to bilby-MCMC implementation of prior boundary (!1237)
+- Fix to time calibration (!1234)
+- Fix nessai sampling time (!1236)
+
 ## [2.0.1] 2023-03-13
 Version 2.0.1 release of Bilby
 

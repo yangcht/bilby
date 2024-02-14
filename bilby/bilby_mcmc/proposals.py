@@ -6,9 +6,10 @@ import numpy as np
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import gaussian_kde
 
+from ..core.fisher import FisherMatrixPosteriorEstimator
 from ..core.prior import PriorDict
 from ..core.sampler.base_sampler import SamplerError
-from ..core.utils import logger, reflect
+from ..core.utils import logger, random, reflect
 from ..gw.source import PARAMETER_SETS
 
 
@@ -18,7 +19,7 @@ class ProposalCycle(object):
         self.weights = [prop.weight for prop in self.proposal_list]
         self.normalized_weights = [w / sum(self.weights) for w in self.weights]
         self.weighted_proposal_list = [
-            np.random.choice(self.proposal_list, p=self.normalized_weights)
+            random.rng.choice(self.proposal_list, p=self.normalized_weights)
             for _ in range(10 * int(1 / min(self.normalized_weights)))
         ]
         self.nproposals = len(self.weighted_proposal_list)
@@ -60,6 +61,9 @@ class BaseProposal(object):
         if self.subset is not None:
             self.parameters = [p for p in self.parameters if p in subset]
             self._str_attrs.append("parameters")
+
+        if len(self.parameters) == 0:
+            raise ValueError("Proposal requested with zero parameters")
 
         self.ndim = len(self.parameters)
 
@@ -129,9 +133,16 @@ class BaseProposal(object):
         val_normalised_reflected = reflect(np.array(val_normalised))
         return minimum + width * val_normalised_reflected
 
-    def __call__(self, chain):
-        sample, log_factor = self.propose(chain)
-        sample = self.apply_boundaries(sample)
+    def __call__(self, chain, likelihood=None, priors=None):
+
+        if getattr(self, "needs_likelihood_and_priors", False):
+            sample, log_factor = self.propose(chain, likelihood, priors)
+        else:
+            sample, log_factor = self.propose(chain)
+
+        if log_factor == 0:
+            sample = self.apply_boundaries(sample)
+
         return sample, log_factor
 
     @abstractmethod
@@ -208,7 +219,7 @@ class FixedGaussianProposal(BaseProposal):
         sample = chain.current_sample
         for key in self.parameters:
             sigma = self.prior_width_dict[key] * self.sigmas[key]
-            sample[key] += sigma * np.random.randn()
+            sample[key] += sigma * random.rng.normal(0, 1)
         log_factor = 0
         return sample, log_factor
 
@@ -245,15 +256,15 @@ class AdaptiveGaussianProposal(BaseProposal):
     def propose(self, chain):
         sample = chain.current_sample
         self.update_scale(chain)
-        if np.random.random() < 1e-3:
+        if random.rng.uniform(0, 1) < 1e-3:
             factor = 1e1
-        elif np.random.random() < 1e-4:
+        elif random.rng.uniform(0, 1) < 1e-4:
             factor = 1e2
         else:
             factor = 1
         for key in self.parameters:
             sigma = factor * self.scale * self.prior_width_dict[key] * self.sigmas[key]
-            sample[key] += sigma * np.random.randn()
+            sample[key] += sigma * random.rng.normal(0, 1)
         log_factor = 0
         return sample, log_factor
 
@@ -295,13 +306,13 @@ class DifferentialEvolutionProposal(BaseProposal):
         theta = chain.current_sample
         theta1 = chain.random_sample
         theta2 = chain.random_sample
-        if np.random.rand() > self.mode_hopping_frac:
+        if random.rng.uniform(0, 1) > self.mode_hopping_frac:
             gamma = 1
         else:
             # Base jump size
-            gamma = np.random.normal(0, 2.38 / np.sqrt(2 * self.ndim))
+            gamma = random.rng.normal(0, 2.38 / np.sqrt(2 * self.ndim))
             # Scale uniformly in log between 0.1 and 10 times
-            gamma *= np.exp(np.log(0.1) + np.log(100.0) * np.random.rand())
+            gamma *= np.exp(np.log(0.1) + np.log(100.0) * random.rng.uniform(0, 1))
 
         for key in self.parameters:
             theta[key] += gamma * (theta2[key] - theta1[key])
@@ -336,7 +347,7 @@ class UniformProposal(BaseProposal):
         for key in self.parameters:
             width = self.prior_width_dict[key]
             if np.isinf(width) is False:
-                sample[key] = np.random.uniform(
+                sample[key] = random.rng.uniform(
                     self.prior_minimum_dict[key], self.prior_maximum_dict[key]
                 )
             else:
@@ -458,7 +469,7 @@ class DensityEstimateProposal(BaseProposal):
 
         # Print a log message
         took = time.time() - start
-        logger.info(
+        logger.debug(
             f"{self.density_name} construction at {self.steps_since_refit} finished"
             f" for length {chain.position} chain, took {took:0.2f}s."
             f" Current accept-ratio={self.acceptance_ratio:0.2f}"
@@ -479,7 +490,7 @@ class DensityEstimateProposal(BaseProposal):
                 fail_parameters.append(key)
 
         if len(fail_parameters) > 0:
-            logger.info(
+            logger.debug(
                 f"{self.density_name} construction failed verification and is discarded"
             )
             self.density = current_density
@@ -492,7 +503,10 @@ class DensityEstimateProposal(BaseProposal):
         # Check if we refit
         testA = self.steps_since_refit >= self.next_refit_time
         if testA:
-            self.refit(chain)
+            try:
+                self.refit(chain)
+            except Exception as e:
+                logger.warning(f"Failed to refit chain due to error {e}")
 
         # If KDE is yet to be fitted, use the fallback
         if self.trained is False:
@@ -655,7 +669,7 @@ class NormalizingFlowProposal(DensityEstimateProposal):
         return np.power(max_js, 2)
 
     def train(self, chain):
-        logger.info("Starting NF training")
+        logger.debug("Starting NF training")
 
         import torch
 
@@ -686,14 +700,14 @@ class NormalizingFlowProposal(DensityEstimateProposal):
                     validation_samples, training_samples_draw
                 )
                 if max_js_bits < max_js_threshold:
-                    logger.info(
+                    logger.debug(
                         f"Training complete after {epoch} steps, "
                         f"max_js_bits={max_js_bits:0.5f}<{max_js_threshold}"
                     )
                     break
 
         took = time.time() - start
-        logger.info(
+        logger.debug(
             f"Flow training step ({self.steps_since_refit}) finished"
             f" for length {chain.position} chain, took {took:0.2f}s."
             f" Current accept-ratio={self.acceptance_ratio:0.2f}"
@@ -714,7 +728,10 @@ class NormalizingFlowProposal(DensityEstimateProposal):
         # Check if we retrain the NF
         testA = self.steps_since_refit >= self.next_refit_time
         if testA:
-            self.train(chain)
+            try:
+                self.train(chain)
+            except Exception as e:
+                logger.warning(f"Failed to retrain chain due to error {e}")
 
         if self.trained is False:
             return self.fallback.propose(chain)
@@ -761,14 +778,72 @@ class FixedJumpProposal(BaseProposal):
     def propose(self, chain):
         sample = chain.current_sample
         for key, jump in self.jumps.items():
-            sign = np.random.randint(2) * 2 - 1
+            sign = random.rng.integers(2) * 2 - 1
             sample[key] += sign * jump + self.epsilon * self.prior_width_dict[key]
         log_factor = 0
         return sample, log_factor
 
     @property
     def epsilon(self):
-        return self.scale * np.random.normal()
+        return self.scale * random.rng.normal()
+
+
+class FisherMatrixProposal(AdaptiveGaussianProposal):
+    needs_likelihood_and_priors = True
+    """Fisher Matrix Proposals
+
+    Uses a finite differencing approach motivated by BayesWave (see, e.g.
+    https://arxiv.org/abs/1410.3835). The inverse Fisher Information Matrix
+    is calculated from the current sample, then proposals are drawn from a
+    multivariate Gaussian and scaled by an adaptive parameter.
+    """
+
+    def __init__(
+        self,
+        priors,
+        subset=None,
+        weight=1,
+        update_interval=100,
+        scale_init=1e0,
+        fd_eps=1e-4,
+        adapt=False,
+    ):
+        super(FisherMatrixProposal, self).__init__(
+            priors, weight, subset, scale_init=scale_init
+        )
+        self.update_interval = update_interval
+        self.steps_since_update = update_interval
+        self.adapt = adapt
+        self.mean = np.zeros(len(self.parameters))
+        self.fd_eps = fd_eps
+
+    def propose(self, chain, likelihood, priors):
+        sample = chain.current_sample
+        if self.adapt:
+            self.update_scale(chain)
+        if self.steps_since_update >= self.update_interval:
+            fmp = FisherMatrixPosteriorEstimator(
+                likelihood, priors, parameters=self.parameters, fd_eps=self.fd_eps
+            )
+            try:
+                self.iFIM = fmp.calculate_iFIM(sample.dict)
+            except (RuntimeError, ValueError, np.linalg.LinAlgError) as e:
+                logger.warning(f"FisherMatrixProposal failed with {e}")
+                if hasattr(self, "iFIM") is False:
+                    # No past iFIM exists, return sample
+                    return sample, 0
+            self.steps_since_update = 0
+
+        jump = self.scale * random.rng.multivariate_normal(
+            self.mean, self.iFIM, check_valid="ignore"
+        )
+
+        for key, val in zip(self.parameters, jump):
+            sample[key] += val
+
+        log_factor = 0
+        self.steps_since_update += 1
+        return sample, log_factor
 
 
 class BaseGravitationalWaveTransientProposal(BaseProposal):
@@ -822,11 +897,11 @@ class CorrelatedPolarisationPhaseJump(BaseGravitationalWaveTransientProposal):
         alpha = sample["psi"] + phase
         beta = sample["psi"] - phase
 
-        draw = np.random.random()
+        draw = random.rng.random()
         if draw < 0.5:
-            alpha = 3.0 * np.pi * np.random.random()
+            alpha = 3.0 * np.pi * random.rng.random()
         else:
-            beta = 3.0 * np.pi * np.random.random() - 2 * np.pi
+            beta = 3.0 * np.pi * random.rng.random() - 2 * np.pi
 
         # Update
         sample["psi"] = (alpha + beta) * 0.5
@@ -861,7 +936,7 @@ class PhaseReversalProposal(BaseGravitationalWaveTransientProposal):
     @property
     def epsilon(self):
         if self.fuzz:
-            return np.random.normal(0, self.fuzz_sigma)
+            return random.rng.normal(0, self.fuzz_sigma)
         else:
             return 0
 
@@ -926,7 +1001,7 @@ class StretchProposal(BaseProposal):
 
 def _stretch_move(sample, complement, scale, ndim, parameters):
     # Draw z
-    u = np.random.rand()
+    u = random.rng.uniform(0, 1)
     z = (u * (scale - 1) + 1) ** 2 / scale
 
     log_factor = (ndim - 1) * np.log(z)
@@ -945,7 +1020,8 @@ class EnsembleProposal(BaseProposal):
 
     def __call__(self, chain, chain_complement):
         sample, log_factor = self.propose(chain, chain_complement)
-        sample = self.apply_boundaries(sample)
+        if log_factor == 0:
+            sample = self.apply_boundaries(sample)
         return sample, log_factor
 
 
@@ -969,7 +1045,7 @@ class EnsembleStretch(EnsembleProposal):
     def propose(self, chain, chain_complement):
         sample = chain.current_sample
         completement = chain_complement[
-            np.random.randint(len(chain_complement))
+            random.rng.integers(len(chain_complement))
         ].current_sample
         return _stretch_move(
             sample, completement, self.scale, self.ndim, self.parameters
@@ -983,7 +1059,7 @@ def get_default_ensemble_proposal_cycle(priors):
 def get_proposal_cycle(string, priors, L1steps=1, warn=True):
     big_weight = 10
     small_weight = 5
-    tiny_weight = 0.1
+    tiny_weight = 0.5
 
     if "gwA" in string:
         # Parameters for learning proposals
@@ -1007,15 +1083,15 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
         if priors.intrinsic:
             intrinsic = PARAMETER_SETS["intrinsic"]
             plist += [
-                AdaptiveGaussianProposal(priors, weight=big_weight, subset=intrinsic),
+                AdaptiveGaussianProposal(priors, weight=small_weight, subset=intrinsic),
                 DifferentialEvolutionProposal(
-                    priors, weight=big_weight, subset=intrinsic
+                    priors, weight=small_weight, subset=intrinsic
                 ),
                 KDEProposal(
-                    priors, weight=big_weight, subset=intrinsic, **learning_kwargs
+                    priors, weight=small_weight, subset=intrinsic, **learning_kwargs
                 ),
                 GMMProposal(
-                    priors, weight=big_weight, subset=intrinsic, **learning_kwargs
+                    priors, weight=small_weight, subset=intrinsic, **learning_kwargs
                 ),
             ]
 
@@ -1024,13 +1100,13 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
             plist += [
                 AdaptiveGaussianProposal(priors, weight=small_weight, subset=extrinsic),
                 DifferentialEvolutionProposal(
-                    priors, weight=big_weight, subset=extrinsic
+                    priors, weight=small_weight, subset=extrinsic
                 ),
                 KDEProposal(
-                    priors, weight=big_weight, subset=extrinsic, **learning_kwargs
+                    priors, weight=small_weight, subset=extrinsic, **learning_kwargs
                 ),
                 GMMProposal(
-                    priors, weight=big_weight, subset=extrinsic, **learning_kwargs
+                    priors, weight=small_weight, subset=extrinsic, **learning_kwargs
                 ),
             ]
 
@@ -1041,6 +1117,11 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
                 GMMProposal(
                     priors, weight=small_weight, subset=mass, **learning_kwargs
                 ),
+                FisherMatrixProposal(
+                    priors,
+                    weight=small_weight,
+                    subset=mass,
+                ),
             ]
 
         if priors.spin:
@@ -1050,12 +1131,22 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
                 GMMProposal(
                     priors, weight=small_weight, subset=spin, **learning_kwargs
                 ),
+                FisherMatrixProposal(
+                    priors,
+                    weight=big_weight,
+                    subset=spin,
+                ),
             ]
-        if priors.precession:
-            measured_spin = ["chi_1", "chi_2", "a_1", "a_2", "chi_1_in_plane"]
+        if priors.measured_spin:
+            measured_spin = PARAMETER_SETS["measured_spin"]
             plist += [
                 AdaptiveGaussianProposal(
                     priors, weight=small_weight, subset=measured_spin
+                ),
+                FisherMatrixProposal(
+                    priors,
+                    weight=small_weight,
+                    subset=measured_spin,
                 ),
             ]
 
@@ -1084,6 +1175,21 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
                 CorrelatedPolarisationPhaseJump(priors, weight=tiny_weight),
                 PhasePolarisationReversalProposal(priors, weight=tiny_weight),
             ]
+        if priors.sky:
+            sky = PARAMETER_SETS["sky"]
+            plist += [
+                FisherMatrixProposal(
+                    priors,
+                    weight=small_weight,
+                    subset=sky,
+                ),
+                GMMProposal(
+                    priors,
+                    weight=small_weight,
+                    subset=sky,
+                    **learning_kwargs,
+                ),
+            ]
         for key in ["time_jitter", "psi", "phi_12", "tilt_2", "lambda_1", "lambda_2"]:
             if key in priors.non_fixed_keys:
                 plist.append(PriorProposal(priors, subset=[key], weight=tiny_weight))
@@ -1099,6 +1205,7 @@ def get_proposal_cycle(string, priors, L1steps=1, warn=True):
             DifferentialEvolutionProposal(priors, weight=big_weight),
             UniformProposal(priors, weight=tiny_weight),
             KDEProposal(priors, weight=big_weight, scale_fits=L1steps),
+            FisherMatrixProposal(priors, weight=big_weight),
         ]
         if GMMProposal.check_dependencies(warn=warn):
             plist.append(GMMProposal(priors, weight=big_weight, scale_fits=L1steps))
@@ -1118,6 +1225,7 @@ def remove_proposals_using_string(plist, string):
         GM=GMMProposal,
         PR=PriorProposal,
         UN=UniformProposal,
+        FM=FisherMatrixProposal,
     )
 
     for element in string.split("no")[1:]:

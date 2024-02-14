@@ -3,14 +3,8 @@ from datetime import date
 with open("dockerfile-template", "r") as ff:
     template = ff.read()
 
-python_versions = [(3, 8), (3, 9), (3, 10)]
+python_versions = [(3, 9), (3, 10)]
 today = date.today().strftime("%Y%m%d")
-
-samplers = [
-    "dynesty", "emcee", "nestle", "ptemcee", "pymultinest", "ultranest",
-    "cpnest", "kombine", "dnest4", "zeus-mcmc",
-    "pytorch", "'pymc>=4'", "nessai", "ptmcmcsampler",
-]
 
 for python_major_version, python_minor_version in python_versions:
     key = f"python{python_major_version}{python_minor_version}"
@@ -26,5 +20,4 @@ for python_major_version, python_minor_version in python_versions:
             date=today,
             python_major_version=python_major_version,
             python_minor_version=python_minor_version,
-            conda_samplers=" ".join(samplers)
         ))

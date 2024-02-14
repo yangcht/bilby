@@ -43,6 +43,7 @@ Kaylee de Soto
 Khun Sang Phukon
 Kruthi Krishna
 Kshipraa Athar
+Kyle Wong
 Leslie Wade
 Liting Xiao
 Maite Mateu-Lucena
@@ -56,6 +57,7 @@ Michael Puerrer
 Michael Williams
 Monica Rizzo
 Moritz Huebner
+Nico Gerardo Bers
 Nicola De Lillo
 Nikhil Sarin
 Nirban Bose
@@ -71,6 +73,7 @@ Roberto Cotesta
 Rory Smith
 S. H. Oh
 Sacha Husa
+Samson Leong
 Scott Coughlin
 Serguei Ossokine
 Shanika Galaudage
@@ -78,10 +81,12 @@ Sharan Banagiri
 Shichao Wu
 Simon Stevenson
 Soichiro Morisaki
+Soumen Roy
 Stephen R Green
 Sumeet Kulkarni
 Sylvia Biscoveanu
 Tathagata Ghosh
+Teagan Clarke
 Tomasz Baka
 Will M. Farr
 Virginia d'Emilio
@@ -89,3 +94,6 @@ Vivien Raymond
 Ka-Lok Lo
 Isaac Legred
 Marc Penuliar
+Andrew Fowlie
+Martin White
+Peter Tsun-Ho Pang

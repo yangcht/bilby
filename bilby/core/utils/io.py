@@ -268,24 +268,32 @@ def encode_for_hdf5(key, item):
         item = float(item)
     elif isinstance(item, np.complex_):
         item = complex(item)
+    if isinstance(item, np.ndarray):
+        # Numpy's wide unicode strings are not supported by hdf5
+        if item.dtype.kind == 'U':
+            logger.debug(f'converting dtype {item.dtype} for hdf5')
+            item = np.array(item, dtype='S')
     if isinstance(item, (np.ndarray, int, float, complex, str, bytes)):
         output = item
     elif item is None:
         output = "__none__"
     elif isinstance(item, list):
+        item_array = np.array(item)
         if len(item) == 0:
             output = item
-        elif isinstance(item[0], (str, bytes)) or item[0] is None:
+        elif np.issubdtype(item_array.dtype, np.number):
+            output = np.array(item)
+        elif issubclass(item_array.dtype.type, str) or None in item:
             output = list()
             for value in item:
                 if isinstance(value, str):
                     output.append(value.encode("utf-8"))
                 elif isinstance(value, bytes):
                     output.append(value)
-                else:
+                elif value is None:
                     output.append(b"__none__")
-        elif isinstance(item[0], (int, float, complex)):
-            output = np.array(item)
+                else:
+                    output.append(str(value).encode("utf-8"))
         else:
             raise ValueError(f'Cannot save {key}: {type(item)} type')
     elif isinstance(item, PriorDict):

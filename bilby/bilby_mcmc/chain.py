@@ -136,12 +136,14 @@ class Chain(object):
 
     @property
     def _random_idx(self):
+        from ..core.utils.random import rng
+
         mindex = self._last_minimum_index[1]
         # Check if mindex exceeds current position by 10 ACT: if so use a random sample
         # otherwise we draw only from the chain past the minimum_index
         if np.isinf(self.tau_last) or self.position - mindex < 10 * self.tau_last:
             mindex = 0
-        return np.random.randint(mindex, self.position + 1)
+        return rng.integers(mindex, self.position + 1)
 
     @property
     def random_sample(self):
@@ -157,7 +159,7 @@ class Chain(object):
 
     @property
     def minimum_index(self):
-        """This calculated a minimum index from which to discard samples
+        """This calculates a minimum index from which to discard samples
 
         A number of methods are provided for the calculation. A subset are
         switched off (by `if False` statements) for future development
@@ -342,7 +344,12 @@ class Chain(object):
     @property
     def nsamples(self):
         nuseable_steps = self.position - self.minimum_index
-        return int(nuseable_steps / (self.thin_by_nact * self.tau))
+        n_independent_samples = nuseable_steps / self.tau
+        nsamples = int(n_independent_samples / self.thin_by_nact)
+        if nuseable_steps >= nsamples:
+            return nsamples
+        else:
+            return 0
 
     @property
     def nsamples_last(self):
@@ -407,12 +414,20 @@ class Chain(object):
         for ax, key in zip(axes[:, 1], self.keys):
             if all_samples is not None:
                 yy_all = all_samples[key]
-                ax.hist(yy_all, bins=50, alpha=0.6, density=True, color="k")
-
+                if np.any(np.isinf(yy_all)):
+                    logger.warning(
+                        f"Could not plot histogram for parameter {key} due to infinite values"
+                    )
+                else:
+                    ax.hist(yy_all, bins=50, alpha=0.6, density=True, color="k")
             yy = self.get_1d_array(key)[nburn : self.position : self.thin]
-            ax.hist(yy, bins=50, alpha=0.8, density=True)
-
-            ax.set_xlabel(self._get_plot_label_by_key(key, priors))
+            if np.any(np.isinf(yy)):
+                logger.warning(
+                    f"Could not plot histogram for parameter {key} due to infinite values"
+                )
+            else:
+                ax.hist(yy, bins=50, alpha=0.8, density=True)
+                ax.set_xlabel(self._get_plot_label_by_key(key, priors))
 
         # Add x-axes labels to the traceplots
         axes[-1, 0].set_xlabel(r"Iteration $[\times 10^{3}]$")

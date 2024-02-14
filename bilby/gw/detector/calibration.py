@@ -183,12 +183,61 @@ class CubicSpline(Recalibrate):
             np.log10(minimum_frequency), np.log10(maximum_frequency), n_points)
 
     @property
+    def delta_log_spline_points(self):
+        if not hasattr(self, "_delta_log_spline_points"):
+            self._delta_log_spline_points = self._log_spline_points[1] - self._log_spline_points[0]
+        return self._delta_log_spline_points
+
+    @property
+    def nodes_to_spline_coefficients(self):
+        if not hasattr(self, "_nodes_to_spline_coefficients"):
+            self._setup_spline_coefficients()
+        return self._nodes_to_spline_coefficients
+
+    def _setup_spline_coefficients(self):
+        """
+        Precompute matrix converting values at nodes to spline coefficients.
+        The algorithm for interpolation is described in
+        https://dcc.ligo.org/LIGO-T2300140, and the matrix calculated here is
+        to solve Eq. (9) in the note.
+        """
+        tmp1 = np.zeros(shape=(self.n_points, self.n_points))
+        tmp1[0, 0] = -1
+        tmp1[0, 1] = 2
+        tmp1[0, 2] = -1
+        tmp1[-1, -3] = -1
+        tmp1[-1, -2] = 2
+        tmp1[-1, -1] = -1
+        for i in range(1, self.n_points - 1):
+            tmp1[i, i - 1] = 1 / 6
+            tmp1[i, i] = 2 / 3
+            tmp1[i, i + 1] = 1 / 6
+        tmp2 = np.zeros(shape=(self.n_points, self.n_points))
+        for i in range(1, self.n_points - 1):
+            tmp2[i, i - 1] = 1
+            tmp2[i, i] = -2
+            tmp2[i, i + 1] = 1
+        self._nodes_to_spline_coefficients = np.linalg.solve(tmp1, tmp2)
+
+    @property
     def log_spline_points(self):
         return self._log_spline_points
 
     def __repr__(self):
         return self.__class__.__name__ + '(prefix=\'{}\', minimum_frequency={}, maximum_frequency={}, n_points={})'\
             .format(self.prefix, self.minimum_frequency, self.maximum_frequency, self.n_points)
+
+    def _evaluate_spline(self, kind, a, b, c, d, previous_nodes):
+        """Evaluate Eq. (1) in https://dcc.ligo.org/LIGO-T2300140"""
+        parameters = np.array([self.params[f"{kind}_{ii}"] for ii in range(self.n_points)])
+        next_nodes = previous_nodes + 1
+        spline_coefficients = self.nodes_to_spline_coefficients.dot(parameters)
+        return (
+            a * parameters[previous_nodes]
+            + b * parameters[next_nodes]
+            + c * spline_coefficients[previous_nodes]
+            + d * spline_coefficients[next_nodes]
+        )
 
     def get_calibration_factor(self, frequency_array, **params):
         """Apply calibration model
@@ -208,19 +257,19 @@ class CubicSpline(Recalibrate):
         calibration_factor : array-like
             The factor to multiply the strain by.
         """
+        log10f_per_deltalog10f = (
+            np.log10(frequency_array) - self.log_spline_points[0]
+        ) / self.delta_log_spline_points
+        previous_nodes = np.clip(np.floor(log10f_per_deltalog10f).astype(int), a_min=0, a_max=self.n_points - 2)
+        b = log10f_per_deltalog10f - previous_nodes
+        a = 1 - b
+        c = (a**3 - a) / 6
+        d = (b**3 - b) / 6
+
         self.set_calibration_parameters(**params)
-        amplitude_parameters = [self.params['amplitude_{}'.format(ii)]
-                                for ii in range(self.n_points)]
-        delta_amplitude = interp1d(
-            self.log_spline_points, amplitude_parameters, kind='cubic',
-            bounds_error=False, fill_value=0)(np.log10(frequency_array))
 
-        phase_parameters = [
-            self.params['phase_{}'.format(ii)] for ii in range(self.n_points)]
-        delta_phase = interp1d(
-            self.log_spline_points, phase_parameters, kind='cubic',
-            bounds_error=False, fill_value=0)(np.log10(frequency_array))
-
+        delta_amplitude = self._evaluate_spline("amplitude", a, b, c, d, previous_nodes)
+        delta_phase = self._evaluate_spline("phase", a, b, c, d, previous_nodes)
         calibration_factor = (1 + delta_amplitude) * (2 + 1j * delta_phase) / (2 - 1j * delta_phase)
 
         return calibration_factor

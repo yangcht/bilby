@@ -6,7 +6,8 @@ from collections import namedtuple
 from copy import copy
 from importlib import import_module
 from itertools import product
-
+import multiprocessing
+from functools import partial
 import numpy as np
 import pandas as pd
 import scipy.stats
@@ -23,11 +24,17 @@ from .utils import (
     recursively_load_dict_contents_from_group,
     recursively_decode_bilby_json,
     safe_file_dump,
+    random,
 )
 from .prior import Prior, PriorDict, DeltaFunction, ConditionalDeltaFunction
 
 
 EXTENSIONS = ["json", "hdf5", "h5", "pickle", "pkl"]
+
+
+def __eval_l(likelihood, params):
+    likelihood.parameters.update(params)
+    return likelihood.log_likelihood()
 
 
 def result_file_name(outdir, label, extension='json', gzip=False):
@@ -70,7 +77,7 @@ def _determine_file_name(filename, outdir, label, extension, gzip):
             return result_file_name(outdir, label, extension, gzip)
 
 
-def read_in_result(filename=None, outdir=None, label=None, extension='json', gzip=False):
+def read_in_result(filename=None, outdir=None, label=None, extension='json', gzip=False, result_class=None):
     """ Reads in a stored bilby result object
 
     Parameters
@@ -80,9 +87,17 @@ def read_in_result(filename=None, outdir=None, label=None, extension='json', gzi
     outdir, label, extension: str
         Name of the output directory, label and extension used for the default
         naming scheme.
-
+    result_class: bilby.core.result.Result, or child of
+        The result class to use. By default, `bilby.core.result.Result` is used,
+        but objects which inherit from this class can be given providing
+        additional methods.
     """
     filename = _determine_file_name(filename, outdir, label, extension, gzip)
+
+    if result_class is None:
+        result_class = Result
+    elif not issubclass(result_class, Result):
+        raise ValueError(f"Input result_class={result_class} not understood")
 
     # Get the actual extension (may differ from the default extension if the filename is given)
     extension = os.path.splitext(filename)[1].lstrip('.')
@@ -90,11 +105,11 @@ def read_in_result(filename=None, outdir=None, label=None, extension='json', gzi
         extension = os.path.splitext(os.path.splitext(filename)[0])[1].lstrip('.')
 
     if 'json' in extension:
-        result = Result.from_json(filename=filename)
+        result = result_class.from_json(filename=filename)
     elif ('hdf5' in extension) or ('h5' in extension):
-        result = Result.from_hdf5(filename=filename)
+        result = result_class.from_hdf5(filename=filename)
     elif ("pkl" in extension) or ("pickle" in extension):
-        result = Result.from_pickle(filename=filename)
+        result = result_class.from_pickle(filename=filename)
     elif extension is None:
         raise ValueError("No filetype extension provided")
     else:
@@ -102,9 +117,47 @@ def read_in_result(filename=None, outdir=None, label=None, extension='json', gzi
     return result
 
 
+def read_in_result_list(filename_list, invalid="warning"):
+    """ Read in a set of results
+
+    Parameters
+    ==========
+    filename_list: list
+        A list of filename paths
+    invalid: str (ignore, warning, error)
+        Behaviour if a file in filename_list is not a valid bilby result
+
+    Returns
+    -------
+    result_list: ResultList
+        A list of results
+    """
+    results_list = []
+    for filename in filename_list:
+        if (
+            not os.path.exists(filename)
+            and os.path.exists(f"{os.path.splitext(filename)[0]}.pkl")
+        ):
+            pickle_path = f"{os.path.splitext(filename)[0]}.pkl"
+            logger.warning(
+                f"Result file {filename} doesn't exist but {pickle_path} does. "
+                f"Using {pickle_path}."
+            )
+            filename = pickle_path
+        try:
+            results_list.append(read_in_result(filename=filename))
+        except Exception as e:
+            msg = f"Failed to read in file {filename} due to exception {e}"
+            if invalid == "error":
+                raise ResultListError(msg)
+            elif invalid == "warning":
+                logger.warning(msg)
+    return ResultList(results_list)
+
+
 def get_weights_for_reweighting(
         result, new_likelihood=None, new_prior=None, old_likelihood=None,
-        old_prior=None, resume_file=None, n_checkpoint=5000):
+        old_prior=None, resume_file=None, n_checkpoint=5000, npool=1):
     """ Calculate the weights for reweight()
 
     See bilby.core.result.reweight() for help with the inputs
@@ -145,30 +198,50 @@ def get_weights_for_reweighting(
 
         starting_index = 0
 
-    for ii, sample in tqdm(result.posterior.iloc[starting_index:].iterrows()):
-        # Convert sample to dictionary
-        par_sample = {key: sample[key] for key in result.posterior}
+    dict_samples = [{key: sample[key] for key in result.posterior}
+                    for _, sample in result.posterior.iterrows()]
+    n = len(dict_samples) - starting_index
 
-        if old_likelihood is not None:
-            old_likelihood.parameters.update(par_sample)
-            old_log_likelihood_array[ii] = old_likelihood.log_likelihood()
-        else:
-            old_log_likelihood_array[ii] = sample["log_likelihood"]
+    # Helper function to compute likelihoods in parallel
+    def eval_pool(this_logl):
+        with multiprocessing.Pool(processes=npool) as pool:
+            chunksize = max(100, n // (2 * npool))
+            return list(tqdm(
+                pool.imap(partial(__eval_l, this_logl),
+                        dict_samples[starting_index:], chunksize=chunksize),
+                desc='Computing likelihoods',
+                total=n)
+            )
 
-        if new_likelihood is not None:
-            new_likelihood.parameters.update(par_sample)
-            new_log_likelihood_array[ii] = new_likelihood.log_likelihood()
-        else:
-            # Don't perform likelihood reweighting (i.e. likelihood isn't updated)
-            new_log_likelihood_array[ii] = old_log_likelihood_array[ii]
+    if old_likelihood is None:
+        old_log_likelihood_array[starting_index:] = \
+            result.posterior["log_likelihood"][starting_index:].to_numpy()
+    else:
+        old_log_likelihood_array[starting_index:] = eval_pool(old_likelihood)
+
+    if new_likelihood is None:
+        # Don't perform likelihood reweighting (i.e. likelihood isn't updated)
+        new_log_likelihood_array[starting_index:] = old_log_likelihood_array[starting_index:]
+    else:
+        new_log_likelihood_array[starting_index:] = eval_pool(new_likelihood)
+
+    # Compute priors
+    for ii, sample in enumerate(tqdm(dict_samples[starting_index:],
+                                     desc='Computing priors',
+                                     total=n),
+                                start=starting_index):
+        # prior calculation needs to not have prior or likelihood keys
+        ln_prior = sample.pop("log_prior", np.nan)
+        if "log_likelihood" in sample:
+            del sample["log_likelihood"]
 
         if old_prior is not None:
-            old_log_prior_array[ii] = old_prior.ln_prob(par_sample)
+            old_log_prior_array[ii] = old_prior.ln_prob(sample)
         else:
-            old_log_prior_array[ii] = sample["log_prior"]
+            old_log_prior_array[ii] = ln_prior
 
         if new_prior is not None:
-            new_log_prior_array[ii] = new_prior.ln_prob(par_sample)
+            new_log_prior_array[ii] = new_prior.ln_prob(sample)
         else:
             # Don't perform prior reweighting (i.e. prior isn't updated)
             new_log_prior_array[ii] = old_log_prior_array[ii]
@@ -202,7 +275,7 @@ def rejection_sample(posterior, weights):
         The posterior resampled using rejection sampling
 
     """
-    keep = weights > np.random.uniform(0, max(weights), weights.shape)
+    keep = weights > random.rng.uniform(0, max(weights), weights.shape)
     return posterior[keep]
 
 
@@ -272,7 +345,7 @@ def reweight(result, label=None, new_likelihood=None, new_prior=None,
         get_weights_for_reweighting(
             result, new_likelihood=new_likelihood, new_prior=new_prior,
             old_likelihood=old_likelihood, old_prior=old_prior,
-            resume_file=resume_file, n_checkpoint=n_checkpoint)
+            resume_file=resume_file, n_checkpoint=n_checkpoint, npool=npool)
 
     if use_nested_samples:
         ln_weights += np.log(result.posterior["weights"])
@@ -402,6 +475,8 @@ class Result(object):
         self.injection_parameters = injection_parameters
         self.posterior = posterior
         self.samples = samples
+        if isinstance(nested_samples, dict):
+            nested_samples = pd.DataFrame(nested_samples)
         self.nested_samples = nested_samples
         self.walkers = walkers
         self.nburn = nburn
@@ -1118,21 +1193,32 @@ class Result(object):
         if utils.command_line_args.bilby_test_mode:
             return
 
-        # bilby default corner kwargs. Overwritten by anything passed to kwargs
         defaults_kwargs = dict(
-            bins=50, smooth=0.9, label_kwargs=dict(fontsize=16),
+            bins=50, smooth=0.9,
             title_kwargs=dict(fontsize=16), color='#0072C1',
             truth_color='tab:orange', quantiles=[0.16, 0.84],
             levels=(1 - np.exp(-0.5), 1 - np.exp(-2), 1 - np.exp(-9 / 2.)),
             plot_density=False, plot_datapoints=True, fill_contours=True,
-            max_n_ticks=3, hist_kwargs=dict(density=True))
+            max_n_ticks=3)
 
         if 'lionize' in kwargs and kwargs['lionize'] is True:
             defaults_kwargs['truth_color'] = 'tab:blue'
             defaults_kwargs['color'] = '#FF8C00'
 
+        label_kwargs_defaults = dict(fontsize=16)
+        hist_kwargs_defaults = dict(density=True)
+
+        label_kwargs_input = kwargs.get("label_kwargs", dict())
+        hist_kwargs_input = kwargs.get("hist_kwargs", dict())
+
+        label_kwargs_defaults.update(label_kwargs_input)
+        hist_kwargs_defaults.update(hist_kwargs_input)
+
         defaults_kwargs.update(kwargs)
         kwargs = defaults_kwargs
+
+        kwargs["label_kwargs"] = label_kwargs_defaults
+        kwargs["hist_kwargs"] = hist_kwargs_defaults
 
         # Handle if truths was passed in
         if 'truth' in kwargs:
@@ -1675,7 +1761,7 @@ class Result(object):
 
 class ResultList(list):
 
-    def __init__(self, results=None):
+    def __init__(self, results=None, consistency_level="warning"):
         """ A class to store a list of :class:`bilby.core.result.Result` objects
         from equivalent runs on the same data. This provides methods for
         outputting combined results.
@@ -1684,8 +1770,15 @@ class ResultList(list):
         ==========
         results: list
             A list of `:class:`bilby.core.result.Result`.
+        consistency_level: str, [ignore, warning, error]
+            If warning, print a warning if inconsistencies are discovered
+            between the results. If error, raise an error if inconsistencies
+            are discovered between the results before combining. If ignore, do
+            nothing.
+
         """
         super(ResultList, self).__init__()
+        self.consistency_level = consistency_level
         for result in results:
             self.append(result)
 
@@ -1716,9 +1809,11 @@ class ResultList(list):
         ----------
         shuffle: bool
             If true, shuffle the samples when combining, otherwise they are concatenated.
-        consistency_level: str, [warning, error]
-            If warning, print a warning if inconsistencies are discovered between the results before combining.
-            If error, raise an error if inconsistencies are discovered between the results before combining.
+        consistency_level: str, [ignore, warning, error]
+            Overwrite the class level consistency_level. If warning, print a
+            warning if inconsistencies are discovered between the results. If
+            error, raise an error if inconsistencies are discovered between
+            the results before combining. If ignore, do nothing.
 
         Returns
         -------
@@ -1802,7 +1897,7 @@ class ResultList(list):
         result_weights = np.exp(log_evidences - np.max(log_evidences))
         posteriors = list()
         for res, frac in zip(self, result_weights):
-            selected_samples = (np.random.uniform(size=len(res.posterior)) < frac)
+            selected_samples = (random.rng.uniform(size=len(res.posterior)) < frac)
             posteriors.append(res.posterior[selected_samples])
 
         # remove original nested_samples
@@ -1863,6 +1958,8 @@ class ResultList(list):
             raise ResultListError(msg)
         elif self.consistency_level == "warning":
             logger.warning(msg)
+        elif self.consistency_level == "ignore":
+            pass
         else:
             raise ValueError(f"Input consistency_level {self.consistency_level} not understood")
 
@@ -1897,7 +1994,8 @@ class ResultList(list):
 
 @latex_plot_format
 def plot_multiple(results, filename=None, labels=None, colours=None,
-                  save=True, evidences=False, corner_labels=None, **kwargs):
+                  save=True, evidences=False, corner_labels=None, linestyles=None,
+                  **kwargs):
     """ Generate a corner plot overlaying two sets of results
 
     Parameters
@@ -1951,11 +2049,17 @@ def plot_multiple(results, filename=None, labels=None, colours=None,
             c = colours[i]
         else:
             c = 'C{}'.format(i)
+        if linestyles is not None:
+            linestyle = linestyles[i]
+        else:
+            linestyle = 'solid'
         hist_kwargs = kwargs.get('hist_kwargs', dict())
         hist_kwargs['color'] = c
-        fig = result.plot_corner(fig=fig, save=False, color=c, **kwargs)
+        hist_kwargs["linestyle"] = linestyle
+        kwargs["hist_kwargs"] = hist_kwargs
+        fig = result.plot_corner(fig=fig, save=False, color=c, contour_kwargs={"linestyle": linestyle}, **kwargs)
         default_filename += '_{}'.format(result.label)
-        lines.append(mpllines.Line2D([0], [0], color=c))
+        lines.append(mpllines.Line2D([0], [0], color=c, linestyle=linestyle))
         default_labels.append(result.label)
 
     # Rescale the axes
@@ -2090,7 +2194,7 @@ def make_pp_plot(results, filename=None, save=True, confidence_interval=[0.68, 0
 
         try:
             name = results[0].priors[key].latex_label
-        except AttributeError:
+        except (AttributeError, KeyError):
             name = key
         label = "{} ({:2.3f})".format(name, pvalue)
         plt.plot(x_values, pp, lines[ii], label=label, **kwargs)

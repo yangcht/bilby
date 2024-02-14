@@ -12,7 +12,7 @@ from ..core.prior import (
     ConditionalPriorDict, ConditionalBasePrior, BaseJointPriorDist, JointPrior,
     JointPriorDistError,
 )
-from ..core.utils import infer_args_from_method, logger
+from ..core.utils import infer_args_from_method, logger, random
 from .conversion import (
     convert_to_lal_binary_black_hole_parameters,
     convert_to_lal_binary_neutron_star_parameters, generate_mass_parameters,
@@ -292,20 +292,15 @@ class Cosmological(Interped):
         else:
             return cls._from_repr(string)
 
-    @property
-    def _repr_dict(self):
-        """
-        Get a dictionary containing the arguments needed to reproduce this object.
-        """
-        from astropy.cosmology.core import Cosmology
+    def get_instantiation_dict(self):
         from astropy import units
-        dict_with_properties = super(Cosmological, self)._repr_dict
-        if isinstance(dict_with_properties['cosmology'], Cosmology):
-            if dict_with_properties['cosmology'].name is not None:
-                dict_with_properties['cosmology'] = dict_with_properties['cosmology'].name
-        if isinstance(dict_with_properties['unit'], units.Unit):
-            dict_with_properties['unit'] = dict_with_properties['unit'].to_string()
-        return dict_with_properties
+        from astropy.cosmology.realizations import available
+        instantiation_dict = super().get_instantiation_dict()
+        if self.cosmology.name in available:
+            instantiation_dict['cosmology'] = self.cosmology.name
+        if isinstance(self.unit, units.Unit):
+            instantiation_dict['unit'] = self.unit.to_string()
+        return instantiation_dict
 
 
 class UniformComovingVolume(Cosmological):
@@ -752,8 +747,21 @@ class CBCPriorDict(ConditionalPriorDict):
             return None
 
     def is_nonempty_intersection(self, pset):
-        """ Check if keys in self exist in the PARAMETER_SETS pset """
-        if len(PARAMETER_SETS[pset].intersection(self.non_fixed_keys)) > 0:
+        """ Check if keys in self exist in the parameter set
+
+        Parameters
+        ----------
+        pset: str, set
+            Either a string referencing a parameter set in PARAMETER_SETS or
+            a set of keys
+        """
+        if isinstance(pset, str) and pset in PARAMETER_SETS:
+            check_set = PARAMETER_SETS[pset]
+        elif isinstance(pset, set):
+            check_set = pset
+        else:
+            raise ValueError(f"pset {pset} not understood")
+        if len(check_set.intersection(self.non_fixed_keys)) > 0:
             return True
         else:
             return False
@@ -769,6 +777,11 @@ class CBCPriorDict(ConditionalPriorDict):
         return self.is_nonempty_intersection("precession_only")
 
     @property
+    def measured_spin(self):
+        """ Return true if priors include any measured_spin parameters """
+        return self.is_nonempty_intersection("measured_spin")
+
+    @property
     def intrinsic(self):
         """ Return true if priors include any intrinsic parameters """
         return self.is_nonempty_intersection("intrinsic")
@@ -777,6 +790,16 @@ class CBCPriorDict(ConditionalPriorDict):
     def extrinsic(self):
         """ Return true if priors include any extrinsic parameters """
         return self.is_nonempty_intersection("extrinsic")
+
+    @property
+    def sky(self):
+        """ Return true if priors include any extrinsic parameters """
+        return self.is_nonempty_intersection("sky")
+
+    @property
+    def distance_inclination(self):
+        """ Return true if priors include any extrinsic parameters """
+        return self.is_nonempty_intersection("distance_inclination")
 
     @property
     def mass(self):
@@ -1003,8 +1026,8 @@ class BNSPriorDict(CBCPriorDict):
     def test_redundancy(self, key, disable_logging=False):
         logger.disabled = disable_logging
         logger.info("Performing redundancy check using BBHPriorDict(self).test_redundancy")
-        logger.disabled = False
         bbh_redundancy = BBHPriorDict(self).test_redundancy(key)
+        logger.disabled = False
 
         if bbh_redundancy:
             return True
@@ -1480,7 +1503,7 @@ class HealPixMapPriorDist(BaseJointPriorDist):
         """
         pixel_choices = np.arange(self.npix)
         pixel_probs = self._check_norm(self.prob)
-        sample_pix = np.random.choice(pixel_choices, size=size, p=pixel_probs, replace=True)
+        sample_pix = random.rng.choice(pixel_choices, size=size, p=pixel_probs, replace=True)
         sample = np.empty((size, self.num_vars))
         for samp in range(size):
             theta, ra = self.hp.pix2ang(self.nside, sample_pix[samp])
@@ -1512,7 +1535,7 @@ class HealPixMapPriorDist(BaseJointPriorDist):
         """
         if self.distmu[pix] == np.inf or self.distmu[pix] <= 0:
             return 0
-        dist = self.distance_icdf(np.random.uniform(0, 1))
+        dist = self.distance_icdf(random.rng.uniform(0, 1))
         name = self.names[-1]
         if (dist > self.bounds[name][1]) | (dist < self.bounds[name][0]):
             self.draw_distance(pix)
@@ -1541,8 +1564,8 @@ class HealPixMapPriorDist(BaseJointPriorDist):
             self.draw_from_pixel(ra, dec, pix)
         return np.array(
             [
-                np.random.uniform(ra - self.pixel_length, ra + self.pixel_length),
-                np.random.uniform(dec - self.pixel_length, dec + self.pixel_length),
+                random.rng.uniform(ra - self.pixel_length, ra + self.pixel_length),
+                random.rng.uniform(dec - self.pixel_length, dec + self.pixel_length),
             ]
         )
 
