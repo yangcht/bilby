@@ -1492,7 +1492,7 @@ class TestMBLikelihood(unittest.TestCase):
         ("IMRPhenomHM", False, 4, False, 5e-3),
     ])
     def test_matches_original_likelihood_low_maximum_frequency(
-        self, approximant, linear_interpolation, highest_mode, add_cal_errors, tolerance
+        self, waveform_approximant, linear_interpolation, highest_mode, add_cal_errors, tolerance
     ):
         """
         Test for maximum frequency < sampling frequency / 2
@@ -1504,7 +1504,7 @@ class TestMBLikelihood(unittest.TestCase):
             duration=self.duration, sampling_frequency=self.sampling_frequency,
             frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
             waveform_arguments=dict(
-                reference_frequency=self.fmin, approximant=approximant
+                reference_frequency=self.fmin, waveform_approximant=waveform_approximant
             )
         )
         self.ifos.inject_signal(parameters=self.test_parameters, waveform_generator=wfg)
@@ -1513,7 +1513,7 @@ class TestMBLikelihood(unittest.TestCase):
             duration=self.duration, sampling_frequency=self.sampling_frequency,
             frequency_domain_source_model=bilby.gw.source.binary_black_hole_frequency_sequence,
             waveform_arguments=dict(
-                reference_frequency=self.fmin, approximant=approximant
+                reference_frequency=self.fmin, waveform_approximant=waveform_approximant
             )
         )
         likelihood = bilby.gw.likelihood.GravitationalWaveTransient(
