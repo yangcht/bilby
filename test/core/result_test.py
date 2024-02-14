@@ -760,7 +760,7 @@ class SimpleGaussianLikelihood(bilby.core.likelihood.Likelihood):
         super().__init__(parameters=dict())
         self.mean = mean
         self.sigma = sigma
-        dist = norm(loc=mean, scale=sigma)
+        self.dist = norm(loc=mean, scale=sigma)
 
     def log_likelihood(self):
         return self.dist.logpdf(self.parameters["mu"])
