@@ -756,16 +756,14 @@ class SimpleGaussianLikelihood(bilby.core.likelihood.Likelihood):
         """
         A very simple Gaussian likelihood for testing
         """
+        from scipy.stats import norm
         super().__init__(parameters=dict())
         self.mean = mean
         self.sigma = sigma
+        dist = norm(loc=mean, scale=sigma)
 
     def log_likelihood(self):
-        mu = self.parameters["mu"]
-        return -0.5 * (
-            (self.mean - mu) ** 2 / self.sigma ** 2
-            + np.log(2 * np.pi * self.sigma ** 2)
-        )
+        return self.dist.logpdf(self.parameters["mu"])
 
 
 class TestReweight(unittest.TestCase):
