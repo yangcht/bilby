@@ -69,3 +69,4 @@ dependencies:
     - autodoc
     - ipykernel
     - build
+    - nflows
