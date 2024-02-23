@@ -174,6 +174,7 @@ def transform_precessing_spins(*args):
     :code:`bilby.gw.conversion.bilby_to_lalsimulation_spins`.
     This will be removed from the public API in a future release.
     """
+    logger.warning("This function is deprecated and will be removed soon")
     return lalsim_SimInspiralTransformPrecessingNewInitialConditions(*args)
 
 
