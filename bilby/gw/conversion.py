@@ -157,11 +157,9 @@ def bilby_to_lalsimulation_spins(
             mass_2, reference_frequency, phase
         )
         float_inputs = all([isinstance(arg, Number) for arg in args])
-        if float_inputs:
-            func = lalsim_SimInspiralTransformPrecessingNewInitialConditions
-        else:
-            func = transform_precessing_spins
-        iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = func(*args)
+        func = lalsim_SimInspiralTransformPrecessingNewInitialConditions
+        if not float_inputs:
+            func = np.vectorize(func)
     return iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z
 
 @np.vectorize
