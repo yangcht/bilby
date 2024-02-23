@@ -164,8 +164,7 @@ def bilby_to_lalsimulation_spins(
         iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = func(*args)
     return iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z
 
-
-
+@np.vectorize
 def transform_precessing_spins(*args):
     """
     Vectorized wrapper for
