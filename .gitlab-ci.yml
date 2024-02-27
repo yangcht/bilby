@@ -137,7 +137,7 @@ install:
 
 python-3.9:
   <<: *unit-test
-  needs: ["basic-3.9", "precommits-py3.9"]
+  needs: ["basic-3.9"]
   image: containers.ligo.org/lscsoft/bilby/v2-bilby-python39
 
 python-3.10:
@@ -171,7 +171,7 @@ python-3.11:
 
 python-3.9-samplers:
   <<: *test-sampler
-  needs: ["basic-3.9", "precommits-py3.9"]
+  needs: ["basic-3.9"]
   image: containers.ligo.org/lscsoft/bilby/v2-bilby-python39
 
 python-3.10-samplers:
@@ -208,7 +208,7 @@ integration-tests-python-3.10:
 plotting-python-3.9:
   <<: *plotting
   image: containers.ligo.org/lscsoft/bilby/v2-bilby-python39
-  needs: ["basic-3.9", "precommits-py3.9"]
+  needs: ["basic-3.9"]
 
 plotting-python-3.10:
   <<: *plotting
