@@ -12,6 +12,7 @@ import bilby
 import matplotlib.pyplot as plt
 import numpy as np
 import pymc as pm
+from bilby.core.sampler.pymc import Pymc
 
 # A few simple setup steps
 label = "linear_regression_pymc_custom_likelihood"
@@ -81,8 +82,6 @@ class GaussianLikelihoodPyMC(bilby.core.likelihood.GaussianLikelihood):
             likelihood is evaluated.
         """
 
-        from bilby.core.sampler.pymc import Pymc
-
         if not isinstance(sampler, Pymc):
             return super(GaussianLikelihoodPyMC, self).log_likelihood()
 
@@ -122,9 +121,6 @@ class PyMCUniformPrior(bilby.core.prior.Uniform):
         If the passed argument is not a `Pymc3` sampler, assume that it is a
         float or array to be passed to the superclass.
         """
-
-        from bilby.core.sampler import Pymc
-
         if not isinstance(sampler, Pymc):
             return super(PyMCUniformPrior, self).ln_prob(sampler)
 
