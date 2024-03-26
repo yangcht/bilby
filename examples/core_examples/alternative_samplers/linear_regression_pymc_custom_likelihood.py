@@ -77,7 +77,7 @@ class GaussianLikelihoodPyMC(bilby.core.likelihood.GaussianLikelihood):
         ----------
         sampler: :class:`bilby.core.sampler.Pymc`
             A Sampler object must be passed containing the prior distributions
-            and PyMC3 :class:`~pymc3.Model` to use as a context manager.
+            and PyMC :class:`~pymc.Model` to use as a context manager.
             If this is not passed, the super class is called and the regular
             likelihood is evaluated.
         """
@@ -115,10 +115,10 @@ class PyMCUniformPrior(bilby.core.prior.Uniform):
 
     def ln_prob(self, sampler=None):
         """
-        Change ln_prob method to take in a Sampler and return a PyMC3
+        Change ln_prob method to take in a Sampler and return a PyMC
         distribution.
 
-        If the passed argument is not a `Pymc3` sampler, assume that it is a
+        If the passed argument is not a `Pymc` sampler, assume that it is a
         float or array to be passed to the superclass.
         """
         if not isinstance(sampler, Pymc):
