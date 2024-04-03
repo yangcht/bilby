@@ -93,8 +93,18 @@ If you use any of the accelerated likelihoods like `ROQGravitationalWaveTransien
 
 - `RelativeBinningGravitationalWaveTransient`
  .. code:: bibtex
+    
+    @article{relbin_bilby,
+        author = "Krishna, Kruthi and Vijaykumar, Aditya and Ganguly, Apratim and Talbot, Colm and Biscoveanu, Sylvia and George, Richard N. and Williams, Natalie and Zimmerman, Aaron",
+        title = "{Accelerated parameter estimation in Bilby with relative binning}",
+        eprint = "2312.06009",
+        archivePrefix = "arXiv",
+        primaryClass = "gr-qc",
+        month = "12",
+        year = "2023"
+    }
 
-    @article{relbin_paper,
+    @article{relbin_cornish,
         author = "Cornish, Neil J.",
         title = "{Fast Fisher Matrices and Lazy Likelihoods}",
         eprint = "1007.4820",
@@ -102,7 +112,17 @@ If you use any of the accelerated likelihoods like `ROQGravitationalWaveTransien
         primaryClass = "gr-qc",
         month = "7",
         year = "2010"
-    }   
+    }
+
+    @article{relbin_zackay,
+        author = "Zackay, Barak and Dai, Liang and Venumadhav, Tejaswi",
+        title = "{Relative Binning and Fast Likelihood Evaluation for Gravitational Wave Parameter Estimation}",
+        eprint = "1806.08792",
+        archivePrefix = "arXiv",
+        primaryClass = "astro-ph.IM",
+        month = "6",
+        year = "2018"
+    } 
 
 Please also ensure that you appropriately cite the following:
 
