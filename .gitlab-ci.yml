@@ -43,7 +43,7 @@ containers:
     # write_dockerfiles.py and commit the changes.
     - git diff --exit-code
     - cp env-template.yml env.yml
-    - echo "  - python={python_major_version}.{python_minor_version}" >> env.yml
+    - echo "  - python=3.10" >> env.yml
     - mamba env create -f env.yml -n test --dry-run
 
 .test-python: &test-python
