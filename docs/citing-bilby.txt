@@ -147,17 +147,20 @@ make use of this functionality in your publications, we recommend you cite them
 as requested in their associated documentation.
 
 **Samplers**
-
-* `dynesty <https://github.com/joshspeagle/dynesty>`__
-* `nestle <https://github.com/kbarbary/nestle>`__
-* `pymultinest <https://github.com/JohannesBuchner/PyMultiNest>`__
 * `cpnest <https://github.com/johnveitch/cpnest>`__
+* `dnest4 <https://github.com/eggplantbren/DNest4>`__
+* `dynesty <https://github.com/joshspeagle/dynesty>`__
 * `emcee <https://github.com/dfm/emcee>`__
-* `nessai <https://github.com/mj-will/nessai>`_
+* `kombine <https://github.com/bfarr/kombine>`__
+* `nestle <https://github.com/kbarbary/nestle>`__
+* `nessai <https://github.com/mj-will/nessai>`__
+* `PyMC3 <https://github.com/pymc-devs/pymc3>`__
+* `pymultinest <https://github.com/JohannesBuchner/PyMultiNest>`__
+* `pypolychord <https://github.com/PolyChord/PolyChordLite>`__
 * `ptemcee <https://github.com/willvousden/ptemcee>`__
 * `ptmcmcsampler <https://github.com/jellis18/PTMCMCSampler>`__
-* `pypolychord <https://github.com/PolyChord/PolyChordLite>`__
-* `PyMC3 <https://github.com/pymc-devs/pymc3>`_
+* `ultranest <https://github.com/JohannesBuchner/UltraNest>`__
+* `zeus <https://github.com/minaskar/zeus>`_
 
 
 **Gravitational-wave tools**
