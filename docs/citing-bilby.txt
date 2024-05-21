@@ -58,7 +58,7 @@ If you use any of the accelerated likelihoods like `ROQGravitationalWaveTransien
 - `ROQGravitationalWaveTransient`
  .. code:: bibtex
 
-     @article{roq_paper,
+     @article{roq_paper_1,
         author = {Smith, Rory and Field, Scott E. and Blackburn, Kent and Haster, Carl-Johan and P\"urrer, Michael and Raymond, Vivien and Schmidt, Patricia},
         title = "{Fast and accurate inference on gravitational waves from precessing compact binaries}",
         eprint = "1604.08253",
@@ -72,6 +72,21 @@ If you use any of the accelerated likelihoods like `ROQGravitationalWaveTransien
         pages = "044031",
         year = "2016"
     }
+
+    @article{roq_paper_2,
+        author = "Morisaki, Soichiro and Smith, Rory and Tsukada, Leo and Sachdev, Surabhi and Stevenson, Simon and Talbot, Colm and Zimmerman, Aaron",
+        title = "{Rapid localization and inference on compact binary coalescences with the Advanced LIGO-Virgo-KAGRA gravitational-wave detector network}",
+        eprint = "2307.13380",
+        archivePrefix = "arXiv",
+        primaryClass = "gr-qc",
+        doi = "10.1103/PhysRevD.108.123040",
+        journal = "Phys. Rev. D",
+        volume = "108",
+        number = "12",
+        pages = "123040",
+        year = "2023"
+    }
+
 
 - `MBGravitationalWaveTransient`
  .. code:: bibtex
