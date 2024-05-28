@@ -22,8 +22,8 @@ class Model:
             should return the probability.
             The requires variables are chosen at run time based on either
             inspection or querying a :code:`variable_names` attribute.
-        cahce: bool
-            Whether to cache the value returned by the model fucntions,
+        cache: bool
+            Whether to cache the value returned by the model functions,
             default=:code:`True`. The caching only looks at the parameters
             not the data, so should be used with caution. The caching also
             breaks :code:`jax` JIT compilation.
