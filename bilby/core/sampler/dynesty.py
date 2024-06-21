@@ -677,10 +677,18 @@ class Dynesty(NestedSampler):
         chain of nested samples within dynesty and have to be removed before
         restarting the sampler.
         """
+
+        import warnings
         logger.debug("Running sampler with checkpointing")
 
         old_ncall = self.sampler.ncall
         sampler_kwargs = self.sampler_function_kwargs.copy()
+        warnings.filterwarnings(
+            "ignore",
+            message="The sampling was stopped short due to maxiter/maxcall limit*",
+            category=UserWarning,
+            module="dynesty.sampler",
+        )
         while True:
             self.finalize_sampler_kwargs(sampler_kwargs)
             self.sampler.run_nested(**sampler_kwargs)
