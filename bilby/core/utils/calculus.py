@@ -1,5 +1,5 @@
 import math
-from numbers import Number
+
 import numpy as np
 from scipy.interpolate import RectBivariateSpline
 from scipy.special import logsumexp
